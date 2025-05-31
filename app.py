@@ -149,8 +149,8 @@ else:
                     st.error("**High risk of BPA**")
                     st.warning("This patient shows characteristics associated with higher BPA risk. Consider additional screening.")
                 else:
-                    st.success("**Low risk of BPA**")
-                    st.info("This patient shows characteristics associated with lower BPA risk.")
+                    st.success("**Low risk of Blood Pressure Abnormalities**")
+                    st.info("This patient shows characteristics associated with lower HBP risk.")
                 
                 st.markdown("---")
                 
