@@ -27,9 +27,9 @@ except Exception as e:
     st.error(f"Error loading model: {e}")
     st.stop()
 
-# Ontology page
+#  page
 if page == "Ontology":
-    st.title("BPA Ontology")
+    st.title("BPA ")
     st.write("""
     ### Key Concepts and Relationships
     
@@ -39,10 +39,13 @@ if page == "Ontology":
     - Demographic factors (age, gender)
     - Lifestyle factors (smoking, alcohol)
     - Health conditions (CKD, thyroid disorders)
-    
-    (#)
     """)
-    st.image("ontology.png", width=600)
+     try:
+        st.image("ontology.png", 
+                caption="BPA Risk Factor Ontology",
+                width=600)  # Adjust width as needed
+    except FileNotFoundError:
+        st.warning("Ontology image not found. Please ensure 'ontology.png' is in the same directory.")
 
 # About page
 elif page == "About":
