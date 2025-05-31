@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 from fpdf import FPDF
-import base64
 
 # Set page config
 st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
@@ -76,7 +75,7 @@ else:
     if 'submitted' not in st.session_state:
         st.session_state.submitted = False
 
-    # Input form (maintaining your exact input structure)
+    # Input form
     with st.form("prediction_form"):
         col1, col2 = st.columns(2)
         
@@ -116,7 +115,7 @@ else:
                 with st.spinner('Analyzing health data and calculating risk...'):
                     time.sleep(1)
                     
-                    # Encode inputs (maintaining your exact encoding)
+                    # Encode inputs
                     input_data = {
                         'loh': loh,
                         'gpc': gpc,
@@ -140,133 +139,64 @@ else:
                     prediction = model.predict(input_values)
                     proba = model.predict_proba(input_values)[0] if hasattr(model, "predict_proba") else [0.5, 0.5]
                 
-                # Display results with enhanced features
-                st.divider()
+                # Display results in two columns (charts on left)
+                col_results, col_charts = st.columns([1, 1.5])
                 
-                # Risk Summary Section
-                col1, col2 = st.columns([1, 1.5])
-                
-                with col1:
-                    st.subheader("Clinical Summary")
+                with col_results:
+                    st.subheader("Prediction Result")
                     if prediction[0] == 1:
-                        st.error(f"**High Risk of Hypertension** ({proba[1]:.1%} probability)")
-                        st.warning("Consider immediate clinical evaluation")
+                        st.error("**High risk of HBP**")
+                        st.warning("This patient shows characteristics associated with higher HBP risk. Consider additional screening.")
                     else:
-                        st.success(f"**Low Risk of Hypertension** ({proba[0]:.1%} probability)")
-                        st.info("Routine monitoring recommended")
+                        st.success("**Low risk of HBP**")
+                        st.info("This patient shows characteristics associated with lower HBP risk.")
                     
-                    # Risk Factors Present
-                    st.markdown("**Key Risk Factors Identified:**")
-                    risk_factors = {
-                        'Age > 50': age > 50,
-                        'BMI ≥ 30': bmi >= 30,
-                        'High Salt Intake': scid > 3,
-                        'Chronic Stress': los == "Chronic Stress",
-                        'Current Smoker': smoking == "Yes",
-                        'Alcohol > 2 drinks/day': alcohol > 28  # 14ml per drink standard
-                    }
-                    
-                    for factor, present in risk_factors.items():
-                        if present:
-                            st.markdown(f"- 🔴 {factor}")
+                    st.markdown("---")
+                    st.write(f"**Probability of low risk:** {proba[0]:.1%}")
+                    st.write(f"**Probability of high risk:** {proba[1]:.1%}")
+                    st.progress(proba[1])
                 
-                with col2:
-                    # Probability Visualization
-                    fig1, ax1 = plt.subplots(figsize=(8, 4))
-                    ax1.bar(['Low Risk', 'High Risk'], proba, 
-                           color=['#2ecc71', '#e74c3c'], width=0.6)
+                with col_charts:
+                    # Probability chart (left side)
+                    st.subheader("Risk Probability")
+                    fig1, ax1 = plt.subplots(figsize=(7, 4))
+                    ax1.bar(['Low Risk', 'High Risk'], proba, color=['green', 'red'])
                     ax1.set_ylim(0, 1)
-                    ax1.set_ylabel('Probability', fontsize=10)
-                    ax1.set_title('Hypertension Risk Probability', pad=15, fontsize=12)
+                    ax1.set_ylabel('Probability')
                     for i, v in enumerate(proba):
-                        ax1.text(i, v + 0.02, f"{v:.1%}", 
-                                ha='center', fontsize=11, weight='bold')
+                        ax1.text(i, v + 0.02, f"{v:.1%}", ha='center')
                     st.pyplot(fig1)
-                
-                st.divider()
-                
-                # Clinical Recommendations Section
-                st.subheader("Personalized Care Plan")
-                
-                rec_cols = st.columns(3)
-                
-                with rec_cols[0]:
-                    with st.container(border=True):
-                        st.markdown("**Lifestyle Modifications**")
-                        if bmi >= 30:
-                            st.write("- Weight reduction program")
-                        if scid > 3:
-                            st.write("- Sodium restriction (<2g/day)")
-                        if pa < 1500:
-                            st.write("- Increase physical activity")
-                        if alcohol > 14:
-                            st.write("- Reduce alcohol consumption")
-                
-                with rec_cols[1]:
-                    with st.container(border=True):
-                        st.markdown("**Clinical Monitoring**")
-                        if prediction[0] == 1:
-                            st.write("- Weekly BP checks")
-                            st.write("- Renal function tests")
-                        else:
-                            st.write("- Annual screening")
+                    
+                    # Feature importance (left side)
+                    if hasattr(model, "feature_importances_"):
+                        st.subheader("Feature Importance")
+                        importance = model.feature_importances_
+                        fi_df = pd.DataFrame({'Feature': features, 'Importance': importance}).sort_values('Importance', ascending=False)
                         
-                        if pregnancy == "Yes":
-                            st.write("- High-risk obstetric follow-up")
+                        fig2, ax2 = plt.subplots(figsize=(7, 5))
+                        ax2.barh(fi_df['Feature'], fi_df['Importance'], color='skyblue')
+                        ax2.set_xlabel('Importance Score')
+                        st.pyplot(fig2)
+                        
+                        with st.expander("View Feature Importance Table"):
+                            st.dataframe(fi_df.set_index('Feature').style.format({'Importance': '{:.3f}'}))
                 
-                with rec_cols[2]:
-                    with st.container(border=True):
-                        st.markdown("**Specialist Referrals**")
-                        if ckd == "Yes":
-                            st.write("- Nephrology consult")
-                        if atd == "Yes":
-                            st.write("- Endocrinology evaluation")
-                        if los == "Chronic Stress":
-                            st.write("- Behavioral health referral")
-                
-                st.divider()
-                
-                # Feature Importance Visualization
-                if hasattr(model, "feature_importances_"):
-                    st.subheader("Key Predictive Factors")
-                    
-                    importance = pd.DataFrame({
-                        'Factor': features,
-                        'Impact': model.feature_importances_
-                    }).sort_values('Impact', ascending=False)
-                    
-                    fig2, ax2 = plt.subplots(figsize=(8, 5))
-                    ax2.barh(importance['Factor'][:8],  # Show top 8 factors
-                            importance['Impact'][:8],
-                            color=plt.cm.Blues(np.linspace(0.3, 1, 8)))
-                    ax2.set_xlabel('Relative Importance', fontsize=10)
-                    ax2.set_title('Top Contributing Factors', pad=15, fontsize=12)
-                    st.pyplot(fig2)
-                    
-                    with st.expander("View Complete Factor Analysis"):
-                        st.dataframe(
-                            importance.set_index('Factor')
-                            .style.background_gradient(cmap='Blues')
-                        )
-                
-                st.divider()
-                
-                # PDF Report Generation
-                def generate_pdf_report():
+                # PDF Report Generation (Fixed)
+                def create_pdf():
                     pdf = FPDF()
                     pdf.add_page()
                     pdf.set_font("Arial", size=12)
                     
                     # Header
-                    pdf.cell(200, 10, txt="Hypertension Risk Assessment Report", ln=1, align='C')
+                    pdf.cell(200, 10, txt="Hypertension Risk Report", ln=1, align='C')
                     pdf.ln(10)
                     
-                    # Patient Summary
+                    # Patient Info
                     pdf.set_font("Arial", 'B', 12)
                     pdf.cell(200, 10, txt="Patient Summary", ln=1)
                     pdf.set_font("Arial", '', 12)
-                    pdf.cell(200, 10, txt=f"Age: {age} | Gender: {gender} | BMI: {bmi:.1f}", ln=1)
-                    pdf.cell(200, 10, txt=f"Smoking: {smoking} | Alcohol: {alcohol}ml/day", ln=1)
+                    pdf.cell(200, 10, txt=f"Age: {age} | BMI: {bmi:.1f}", ln=1)
+                    pdf.cell(200, 10, txt=f"Gender: {gender} | Pregnant: {pregnancy}", ln=1)
                     pdf.ln(5)
                     
                     # Risk Assessment
@@ -281,22 +211,25 @@ else:
                     pdf.set_font("Arial", '', 12)
                     
                     recs = []
-                    if bmi >= 30: recs.append("Weight management program")
-                    if scid > 3: recs.append("Sodium restriction diet")
-                    if prediction[0] == 1: recs.append("Immediate clinical evaluation")
+                    if prediction[0] == 1:
+                        recs.append("Immediate clinical evaluation")
+                        recs.append("Consider 24-hour BP monitoring")
+                    if bmi >= 30:
+                        recs.append("Weight management program")
+                    if scid > 3:
+                        recs.append("Sodium restriction diet")
                     
                     for rec in recs:
                         pdf.cell(200, 10, txt=f"- {rec}", ln=1)
                     
                     return pdf
                 
-                pdf = generate_pdf_report()
-                pdf_output = pdf.output(dest='S').encode('latin1')
-                
+                # Generate and download PDF
+                pdf = create_pdf()
                 st.download_button(
-                    label="📄 Download Full Clinical Report",
-                    data=pdf_output,
-                    file_name="hypertension_risk_report.pdf",
+                    label="Download PDF Report",
+                    data=pdf.output(dest='S').encode('latin1'),
+                    file_name="hbp_risk_report.pdf",
                     mime="application/pdf"
                 )
                 
