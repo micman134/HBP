@@ -181,57 +181,7 @@ else:
                         with st.expander("View Feature Importance Table"):
                             st.dataframe(fi_df.set_index('Feature').style.format({'Importance': '{:.3f}'}))
                 
-                # PDF Report Generation (Fixed)
-                def create_pdf():
-                    pdf = FPDF()
-                    pdf.add_page()
-                    pdf.set_font("Arial", size=12)
-                    
-                    # Header
-                    pdf.cell(200, 10, txt="Hypertension Risk Report", ln=1, align='C')
-                    pdf.ln(10)
-                    
-                    # Patient Info
-                    pdf.set_font("Arial", 'B', 12)
-                    pdf.cell(200, 10, txt="Patient Summary", ln=1)
-                    pdf.set_font("Arial", '', 12)
-                    pdf.cell(200, 10, txt=f"Age: {age} | BMI: {bmi:.1f}", ln=1)
-                    pdf.cell(200, 10, txt=f"Gender: {gender} | Pregnant: {pregnancy}", ln=1)
-                    pdf.ln(5)
-                    
-                    # Risk Assessment
-                    pdf.set_font("Arial", 'B', 12)
-                    risk_level = "High" if prediction[0] == 1 else "Low"
-                    pdf.cell(200, 10, txt=f"Risk Level: {risk_level} ({proba[1]:.1%} probability)", ln=1)
-                    pdf.ln(5)
-                    
-                    # Recommendations
-                    pdf.set_font("Arial", 'B', 12)
-                    pdf.cell(200, 10, txt="Clinical Recommendations:", ln=1)
-                    pdf.set_font("Arial", '', 12)
-                    
-                    recs = []
-                    if prediction[0] == 1:
-                        recs.append("Immediate clinical evaluation")
-                        recs.append("Consider 24-hour BP monitoring")
-                    if bmi >= 30:
-                        recs.append("Weight management program")
-                    if scid > 3:
-                        recs.append("Sodium restriction diet")
-                    
-                    for rec in recs:
-                        pdf.cell(200, 10, txt=f"- {rec}", ln=1)
-                    
-                    return pdf
-                
-                # Generate and download PDF
-                pdf = create_pdf()
-                st.download_button(
-                    label="Download PDF Report",
-                    data=pdf.output(dest='S').encode('latin1'),
-                    file_name="hbp_risk_report.pdf",
-                    mime="application/pdf"
-                )
+               
                 
             except Exception as e:
                 st.error(f"An error occurred during prediction: {e}")
