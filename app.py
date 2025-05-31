@@ -11,7 +11,7 @@ st.set_page_config(page_title="HBP Risk Prediction Syetem", layout="wide")
 # Sidebar navigation
 with st.sidebar:
     st.image("https://via.placeholder.com/150x50?text=BPA+Tool", width=150)  # Replace with your logo
-    st.title("Navigation")
+    st.title("Menu")
     page = st.radio("Go to", ["Predict", "Ontology", "About"])
 
 # Load model (cached)
@@ -58,7 +58,7 @@ if page == "Ontology":
 elif page == "About":
     st.title("About This Tool")
     st.write("""
-    ### BPA Risk Prediction Tool
+    ### High Blood Pressure Risk Prediction Tool
     
     **Version**: 1.0.0  
     **Purpose**: Clinical decision support for Blood Pressure Abnormalities exposure risk assessment
@@ -72,7 +72,7 @@ elif page == "About":
 
 # Main Prediction Page
 else:
-    st.title("BPA Risk Prediction Tool")
+    st.title("Hight Blood Pressure Risk Prediction Tool")
     st.write("""
     This tool predicts the risk of BPA exposure based on patient characteristics.
     Please fill in all the fields below and click 'Predict'.
