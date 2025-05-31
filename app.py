@@ -43,10 +43,9 @@ if page == "Ontology":
     [More details...](#)
     """)
     st.image("https://via.placeholder.com/600x300?text=Ontology+Diagram", width=600)
-    return
 
 # About page
-if page == "About":
+elif page == "About":
     st.title("About This Tool")
     st.write("""
     ### BPA Risk Prediction Tool
@@ -62,10 +61,9 @@ if page == "About":
     
     **Contact**: support@yourorg.com
     """)
-    return
 
 # Main Prediction Page
-if page == "Predict":
+else:
     st.title("BPA Risk Prediction Tool")
     st.write("""
     This tool predicts the risk of BPA based on patient characteristics.
