@@ -40,11 +40,11 @@ if page == "Ontology":
     - Lifestyle factors (smoking, alcohol)
     - Health conditions (CKD, thyroid disorders)
     """)
-try:
-    st.image("ontology.png", 
-        caption="BPA Risk Factor Ontology",
-        width=600)  # Adjust width as needed
-except FileNotFoundError:
+    try:
+       st.image("ontology.png", 
+         caption="BPA Risk Factor Ontology",
+         width=600)  # Adjust width as needed
+    except FileNotFoundError:
         st.warning("Ontology image not found. Please ensure 'ontology.png' is in the same directory.")
 
 # About page
