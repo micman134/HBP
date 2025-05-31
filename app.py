@@ -4,8 +4,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import time
-from fpdf import FPDF
-import base64
 
 # Set page config
 st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
@@ -166,8 +164,13 @@ else:
                     ax1.set_ylim(0, 1)
                     ax1.set_ylabel('Probability', fontsize=10)
                     ax1.set_title('Hypertension Risk Probability', pad=15, fontsize=12)
+
+                    # Only show y-axis ticks at 0 and 1
+                    ax1.set_yticks([0, 1])
+
                     for i, v in enumerate(proba):
                         ax1.text(i, v + 0.02, f"{v:.1%}", ha='center', fontsize=11, weight='bold')
+
                     st.pyplot(fig1)
 
                 st.divider()
@@ -212,18 +215,10 @@ else:
                 if hasattr(model, "feature_importances_"):
                     st.subheader("Key Predictive Factors")
 
-                    importances = model.feature_importances_
-                    importance_sum = importances.sum()
-                    if importance_sum > 0:
-                        importances = importances / importance_sum  # Normalize to sum=1
-
                     importance = pd.DataFrame({
                         'Factor': features,
-                        'Impact': importances
+                        'Impact': model.feature_importances_
                     }).sort_values('Impact', ascending=False)
-
-                    st.write("Normalized feature importances:")
-                    st.dataframe(importance.style.background_gradient(cmap='Blues'))
 
                     fig2, ax2 = plt.subplots(figsize=(8, 5))
                     ax2.barh(importance['Factor'][:8],
@@ -231,7 +226,6 @@ else:
                              color=plt.cm.Blues(np.linspace(0.3, 1, 8)))
                     ax2.set_xlabel('Relative Importance', fontsize=10)
                     ax2.set_title('Top Contributing Factors', pad=15, fontsize=12)
-                    ax2.invert_yaxis()  # highest importance on top
                     st.pyplot(fig2)
 
                     with st.expander("View Complete Factor Analysis"):
