@@ -1,6 +1,8 @@
 import streamlit as st
 import joblib
 import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
 
 # Set page config
 st.set_page_config(page_title="BPA Risk Prediction", layout="wide")
@@ -97,10 +99,81 @@ if submitted:
             # Show probability if available
             if hasattr(model, "predict_proba"):
                 proba = model.predict_proba(input_values)[0]
-                st.subheader("Risk Probability")
+                
+                # Probability chart
+                st.subheader("Risk Probability Distribution")
+                fig1, ax1 = plt.subplots()
+                ax1.bar(['Low Risk', 'High Risk'], proba, color=['green', 'red'])
+                ax1.set_ylim(0, 1)
+                ax1.set_ylabel('Probability')
+                ax1.set_title('BPA Risk Probability')
+                for i, v in enumerate(proba):
+                    ax1.text(i, v + 0.02, f"{v:.1%}", ha='center')
+                st.pyplot(fig1)
+                
                 st.write(f"Probability of low risk: {proba[0]:.1%}")
                 st.write(f"Probability of high risk: {proba[1]:.1%}")
                 st.progress(proba[1])
+                
+            # Feature importance if available
+            if hasattr(model, "feature_importances_"):
+                st.subheader("Feature Importance Analysis")
+                importance = model.feature_importances_
+                feature_importance = pd.DataFrame({'Feature': features, 'Importance': importance})
+                feature_importance = feature_importance.sort_values('Importance', ascending=False)
+                
+                fig2, ax2 = plt.subplots()
+                ax2.barh(feature_importance['Feature'], feature_importance['Importance'], color='skyblue')
+                ax2.set_xlabel('Importance Score')
+                ax2.set_title('Relative Feature Importance')
+                st.pyplot(fig2)
+                
+                st.write("Top contributing factors to this prediction:")
+                st.dataframe(feature_importance.set_index('Feature'))
+            
+            # Risk factor analysis
+            st.subheader("Risk Factor Analysis")
+            risk_factors = []
+            protective_factors = []
+            
+            # Define thresholds for what constitutes risk/protective factors
+            thresholds = {
+                'age': (50, "Age > 50 years"),
+                'bmi': (30, "BMI > 30 (Obese)"),
+                'loh': (10, "Low Hemoglobin (<10 g/dl)"),
+                'gpc': (0.25, "High Inbreeding Coefficient (>0.25)"),
+                'pa': (1000, "Low Physical Activity (<1000 CAL)"),
+                'scid': (3, "High Salt Intake (>3g)"),
+                'alcohol': (20, "High Alcohol Consumption (>20ml)"),
+                'los': (2, "Chronic Stress"),
+                'ckd': (0.5, "Chronic Kidney Disease"),
+                'atd': (0.5, "Adrenal/Thyroid Disorders"),
+                'smoking': (0.5, "Smoking"),
+                'pregnancy': (0.5, "Pregnancy")
+            }
+            
+            for feature, value in input_data.items():
+                if feature in thresholds:
+                    threshold, message = thresholds[feature]
+                    if isinstance(threshold, (int, float)):
+                        if value > threshold:
+                            risk_factors.append(message)
+                        elif value < threshold/2:  # Arbitrary protective threshold
+                            protective_factors.append(f"Low {message.split(' ')[0]}")
+                    elif value == 1:  # For binary features
+                        risk_factors.append(message)
+            
+            if risk_factors:
+                st.warning("**Identified Risk Factors:**")
+                for factor in risk_factors:
+                    st.write(f"- {factor}")
+            else:
+                st.info("No significant risk factors identified")
+                
+            if protective_factors:
+                st.success("**Identified Protective Factors:**")
+                for factor in protective_factors:
+                    st.write(f"- {factor}")
                 
         except Exception as e:
             st.error(f"An error occurred during prediction: {e}")
