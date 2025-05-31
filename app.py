@@ -1,10 +1,10 @@
-
 import streamlit as st
 import joblib
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import time
+import shap
 
 # Set page config
 st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
@@ -42,10 +42,10 @@ if page == "Ontology":
     try:
         st.image("ontology2.png", caption="HBP Risk Factor Ontology Diagram", use_column_width=True)
     except FileNotFoundError:
-        st.error("Ontology image not found. Please ensure 'ontology.PNG' is in the same directory.")
+        st.error("Ontology image not found. Please ensure 'ontology2.png' is in the same directory.")
     except Exception as e:
         st.error(f"Error loading ontology image: {e}")
-        
+
     try:
         st.image("ontology.PNG", caption="Protege Ontology Diagram", use_column_width=True)
     except FileNotFoundError:
@@ -90,7 +90,7 @@ else:
 
         with col2:
             alcohol = st.number_input("Alcohol Consumption Per Day (ml)", 0, value=0)
-            los = st.selectbox("Level Of Stress", 
+            los = st.selectbox("Level Of Stress",
                                ["Select", "Acute/normal stress", "Episodic acute stress", "Chronic Stress"], index=0)
             ckd = st.selectbox("Chronic Kidney Disease", ["Select", "Yes", "No"], index=0)
             atd = st.selectbox("Adrenal and Thyroid Disorders", ["Select", "Yes", "No"], index=0)
@@ -133,7 +133,17 @@ else:
 
                     X_scaled = scaler.transform(X)
                     prediction = model.predict(X_scaled)
-                    proba = model.predict_proba(X_scaled)[0] if hasattr(model, "predict_proba") else [0.5, 0.5]
+
+                    # Safe predict_proba extraction
+                    proba = [0.5, 0.5]  # default fallback
+                    if hasattr(model, "predict_proba"):
+                        proba_raw = model.predict_proba(X_scaled)
+                        if proba_raw.shape[1] == 2:
+                            proba = proba_raw[0]
+                        elif proba_raw.shape[1] == 1:
+                            proba = [1 - proba_raw[0, 0], proba_raw[0, 0]]
+                        else:
+                            proba = [0.5, 0.5]
 
                 st.divider()
                 col1, col2 = st.columns([1, 1.5])
@@ -151,10 +161,10 @@ else:
                     risk_factors = {
                         'Age > 50': age > 50,
                         'BMI ≥ 30': bmi >= 30,
-                        'High Salt Intake': scid > 2325,
+                        'High Salt Intake': scid > 2.325,  # fixed threshold grams realistically
                         'Chronic Stress': los == "Chronic Stress",
                         'Current Smoker': smoking == "Yes",
-                        'Alcohol > 2 drinks/day': alcohol > 355
+                        'Alcohol > 2 drinks/day (approx 355 ml)': alcohol > 355
                     }
 
                     for factor, present in risk_factors.items():
@@ -182,7 +192,7 @@ else:
                     st.markdown("**Lifestyle Modifications**")
                     if bmi >= 30:
                         st.write("- Weight reduction program")
-                    if scid > 3:
+                    if scid > 2:
                         st.write("- Sodium restriction (<2g/day)")
                     if pa < 1500:
                         st.write("- Increase physical activity")
@@ -196,39 +206,50 @@ else:
                         st.write("- Renal function tests")
                     else:
                         st.write("- Annual screening")
-                    if pregnancy == "Yes":
+                    if pregnancy == 1:
                         st.write("- High-risk obstetric follow-up")
 
                 with rec_cols[2]:
                     st.markdown("**Specialist Referrals**")
-                    if ckd == "Yes":
+                    if ckd == 1:
                         st.write("- Nephrology consult")
-                    if atd == "Yes":
+                    if atd == 1:
                         st.write("- Endocrinology evaluation")
-                    if los == "Chronic Stress":
+                    if los == 3:
                         st.write("- Behavioral health referral")
 
                 st.divider()
 
-                if hasattr(model, "feature_importances_"):
-                    st.subheader("Key Predictive Factors")
-                    importance = pd.DataFrame({
-                        'Factor': features,
-                        'Impact': model.feature_importances_
-                    }).sort_values('Impact', ascending=False)
+                # SHAP explanation (if tree model)
+                if hasattr(model, "predict_proba") and hasattr(model, "feature_importances_"):
+                    st.subheader("Personalized Key Predictive Factors")
+                    explainer = shap.TreeExplainer(model)
+                    shap_values = explainer.shap_values(X_scaled)
+                    # For binary classification, shap_values is list; take index 1 (positive class)
+                    if isinstance(shap_values, list) and len(shap_values) == 2:
+                        shap_vals = shap_values[1][0]
+                    else:
+                        shap_vals = shap_values[0]
+
+                    shap_df = pd.DataFrame({
+                        'Feature': features,
+                        'SHAP Value': shap_vals
+                    })
+                    shap_df['abs_shap'] = shap_df['SHAP Value'].abs()
+                    shap_df = shap_df.sort_values(by='abs_shap', ascending=True)
 
                     fig2, ax2 = plt.subplots(figsize=(8, 5))
-                    ax2.barh(importance['Factor'][:8],
-                             importance['Impact'][:8],
-                             color=plt.cm.Blues(np.linspace(0.3, 1, 8)))
-                    ax2.set_xlabel('Relative Importance', fontsize=10)
-                    ax2.set_title('Top Contributing Factors', pad=15, fontsize=12)
+                    colors = ['#e74c3c' if v < 0 else '#2ecc71' for v in shap_df['SHAP Value']]
+                    ax2.barh(shap_df['Feature'], shap_df['SHAP Value'], color=colors)
+                    ax2.set_xlabel('SHAP Value (Impact on Prediction)')
+                    ax2.set_title('Personalized Key Predictive Factors')
                     st.pyplot(fig2)
 
-                    with st.expander("View Complete Factor Analysis"):
-                        st.dataframe(importance.set_index('Factor').style.background_gradient(cmap='Blues'))
-
-                st.divider()
+                    st.markdown("""
+                    - **Green bars** increase risk prediction.
+                    - **Red bars** decrease risk prediction.
+                    """)
 
             except Exception as e:
-                st.error(f"An error occurred during prediction: {e}")
+                st.error(f"Error during prediction: {e}")
+                st.session_state.submitted = False
