@@ -30,70 +30,77 @@ with st.form("prediction_form"):
     
     with col1:
         age = st.number_input("Age (years)", min_value=0, max_value=120, value=45)
-        bmi = st.number_input("BMI", min_value=10.0, max_value=50.0, value=25.0, step=0.1)
-        gender = st.radio("Gender", ["Male", "Female"], horizontal=True)
-        pregnancy = st.selectbox("Pregnancy Status", ["No", "Yes"]) if gender == "Female" else "No"
-        smoking = st.selectbox("Smoking Status", ["Non-smoker", "Smoker"])
-        los = st.select_slider("Level of Stress", ["Low", "Medium", "High"])
-    
+        bmi = st.number_input("Body Mass Index (kg/m²)", min_value=10.0, max_value=50.0, value=25.0, step=0.1)
+        loh = st.number_input("Level Of Haemoglobin (Hb g/dl)", min_value=0.0, max_value=20.0, value=12.0, step=0.1)
+        gpc = st.number_input("Inbreed Coefficient", min_value=0.0, max_value=1.0, value=0.0, step=0.01)
+        pa = st.number_input("Physical Activity (CAL/4.18Kj)", min_value=0, value=2000)
+        scid = st.number_input("Salt Content in diet (grams)", min_value=0.0, value=5.0, step=0.1)
+        
     with col2:
-        ckd = st.selectbox("Chronic Kidney Disease", ["No", "Yes"])
-        atd = st.selectbox("Antidepressant Therapy", ["No", "Yes"])
-        gpc = st.select_slider("General Physical Condition", ["Poor", "Fair", "Good", "Excellent"])
-        alcohol = st.selectbox("Alcohol Consumption", ["None", "Light", "Moderate", "Heavy"])
-        pa = st.select_slider("Physical Activity Level", ["Sedentary", "Light", "Moderate", "Active"])
-        scid = st.selectbox("SCID Diagnosis", ["No", "Yes"])
-        loh = st.select_slider("Level of Happiness", ["Low", "Medium", "High"])
+        alcohol = st.number_input("Alcohol Consumption Per Day (millilitres)", min_value=0, value=0)
+        los = st.selectbox("Level Of Stress", 
+                          ["Select", "Acute/normal stress", "Episodic acute stress", "Chronic Stress"],
+                          index=0)
+        ckd = st.selectbox("Chronic Kidney Disease", ["Select", "Yes", "No"], index=0)
+        atd = st.selectbox("Adrenal and Thyroid Disorders", ["Select", "Yes", "No"], index=0)
+        gender = st.selectbox("Gender", ["Select Gender", "Female", "Male"], index=0)
+        pregnancy = st.selectbox("Pregnancy Status", ["Select", "Yes", "No"], index=0)
+        smoking = st.selectbox("Smoking Status", ["Select", "Yes", "No"], index=0)
     
     submitted = st.form_submit_button("Predict BPA Risk")
 
 # Prediction logic
 if submitted:
-    try:
-        # Encode inputs
-        input_data = {
-            'loh': ["Low", "Medium", "High"].index(loh),
-            'gpc': ["Poor", "Fair", "Good", "Excellent"].index(gpc),
-            'age': age,
-            'bmi': bmi,
-            'gender': 1 if gender == "Female" else 0,
-            'pregnancy': 1 if pregnancy == "Yes" else 0,
-            'smoking': 1 if smoking == "Smoker" else 0,
-            'pa': ["Sedentary", "Light", "Moderate", "Active"].index(pa),
-            'scid': 1 if scid == "Yes" else 0,
-            'alcohol': ["None", "Light", "Moderate", "Heavy"].index(alcohol),
-            'los': ["Low", "Medium", "High"].index(los),
-            'ckd': 1 if ckd == "Yes" else 0,
-            'atd': 1 if atd == "Yes" else 0
-        }
-        
-        # Convert to correct order for model
-        features = ['loh', 'gpc', 'age', 'bmi', 'gender', 'pregnancy', 'smoking', 
-                   'pa', 'scid', 'alcohol', 'los', 'ckd', 'atd']
-        input_values = [[input_data[feature] for feature in features]]
-        
-        # Make prediction
-        prediction = model.predict(input_values)
-        
-        # Display results
-        st.subheader("Prediction Result")
-        if prediction[0] == 1:
-            st.error("**High risk of BPA**")
-            st.warning("This patient shows characteristics associated with higher BPA risk. Consider additional screening.")
-        else:
-            st.success("**Low risk of BPA**")
-            st.info("This patient shows characteristics associated with lower BPA risk.")
-        
-        # Add some space
-        st.markdown("---")
-        
-        # Show probability if available
-        if hasattr(model, "predict_proba"):
-            proba = model.predict_proba(input_values)[0]
-            st.subheader("Risk Probability")
-            st.write(f"Probability of low risk: {proba[0]:.1%}")
-            st.write(f"Probability of high risk: {proba[1]:.1%}")
-            st.progress(proba[1])
+    # Validate all fields are selected
+    if (los == "Select" or ckd == "Select" or atd == "Select" or 
+        gender == "Select Gender" or pregnancy == "Select" or smoking == "Select"):
+        st.error("Please fill in all fields before submitting")
+    else:
+        try:
+            # Encode inputs
+            input_data = {
+                'loh': loh,
+                'gpc': gpc,
+                'age': age,
+                'bmi': bmi,
+                'gender': 1 if gender == "Female" else 0,
+                'pregnancy': 1 if pregnancy == "Yes" else 0,
+                'smoking': 1 if smoking == "Yes" else 0,
+                'pa': pa,
+                'scid': scid,
+                'alcohol': alcohol,
+                'los': ["Acute/normal stress", "Episodic acute stress", "Chronic Stress"].index(los) + 1,
+                'ckd': 1 if ckd == "Yes" else 0,
+                'atd': 1 if atd == "Yes" else 0
+            }
             
-    except Exception as e:
-        st.error(f"An error occurred during prediction: {e}")
+            # Convert to correct order for model
+            features = ['loh', 'gpc', 'age', 'bmi', 'gender', 'pregnancy', 'smoking', 
+                       'pa', 'scid', 'alcohol', 'los', 'ckd', 'atd']
+            input_values = [[input_data[feature] for feature in features]]
+            
+            # Make prediction
+            prediction = model.predict(input_values)
+            
+            # Display results
+            st.subheader("Prediction Result")
+            if prediction[0] == 1:
+                st.error("**High risk of BPA**")
+                st.warning("This patient shows characteristics associated with higher BPA risk. Consider additional screening.")
+            else:
+                st.success("**Low risk of BPA**")
+                st.info("This patient shows characteristics associated with lower BPA risk.")
+            
+            # Add some space
+            st.markdown("---")
+            
+            # Show probability if available
+            if hasattr(model, "predict_proba"):
+                proba = model.predict_proba(input_values)[0]
+                st.subheader("Risk Probability")
+                st.write(f"Probability of low risk: {proba[0]:.1%}")
+                st.write(f"Probability of high risk: {proba[1]:.1%}")
+                st.progress(proba[1])
+                
+        except Exception as e:
+            st.error(f"An error occurred during prediction: {e}")
