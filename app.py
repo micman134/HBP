@@ -10,7 +10,7 @@ st.set_page_config(page_title="HBP Risk Prediction Syetem", layout="wide")
 
 # Sidebar navigation
 with st.sidebar:
-    st.image("https://via.placeholder.com/150x50?text=BPA+Tool", width=150)  # Replace with your logo
+   
     st.title("Menu")
     page = st.radio("Go to", ["Predict", "Ontology", "About"])
 
