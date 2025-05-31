@@ -6,7 +6,7 @@ import numpy as np
 import time
 
 # Set page config
-st.set_page_config(page_title="BPA Risk Prediction", layout="wide")
+st.set_page_config(page_title="HBP Risk Prediction Syetem", layout="wide")
 
 # Sidebar navigation
 with st.sidebar:
@@ -29,12 +29,12 @@ except Exception as e:
 
 # Ontology page
 if page == "Ontology":
-    st.title("BPA Ontology")
+    st.title("Ontology For HBP Prediction System")
     st.write("""
     ### Key Concepts and Relationships
 
     **Risk Factor Categories**:
-    - **(BPA)**: Blood Pressure .
+    - **(BPA)**: Blood Pressure Abnormalities.
     - **Demographic**: Age, Gender, Pregnancy Status
     - **Lifestyle**: Smoking, Alcohol Consumption, Physical Activity
     - **Clinical**: Chronic Kidney Disease, Thyroid Disorders
@@ -53,7 +53,6 @@ if page == "Ontology":
     except Exception as e:
         st.error(f"Error loading ontology image: {e}")
     
-   
 
 # About page
 elif page == "About":
