@@ -137,10 +137,10 @@ else:
                 with col1:
                     st.subheader("Clinical Summary")
                     if prediction[0] == 1:
-                        st.error(f"**High Risk of Hypertension** ({proba[1]:.1%} probability)")
+                        st.error(f"**High Risk of Hypertension** ")
                         st.warning("Consider immediate clinical evaluation")
                     else:
-                        st.success(f"**Low Risk of Hypertension** ({proba[0]:.1%} probability)")
+                        st.success(f"**Low Risk of Hypertension** ")
                         st.info("Routine monitoring recommended")
 
                     st.markdown("**Key Risk Factors Identified:**")
