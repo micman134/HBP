@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import time
+import shap
 
 # Set page config
 st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
@@ -22,8 +23,10 @@ def load_model_and_scaler():
 
 try:
     model, scaler = load_model_and_scaler()
+    # Create SHAP explainer (TreeExplainer works for tree models like RandomForest, XGBoost)
+    explainer = shap.TreeExplainer(model)
 except Exception as e:
-    st.error(f"Error loading model or scaler: {e}")
+    st.error(f"Error loading model, scaler or creating explainer: {e}")
     st.stop()
 
 # Ontology page
@@ -41,10 +44,10 @@ if page == "Ontology":
     try:
         st.image("ontology2.png", caption="HBP Risk Factor Ontology Diagram", use_column_width=True)
     except FileNotFoundError:
-        st.error("Ontology image not found. Please ensure 'ontology.PNG' is in the same directory.")
+        st.error("Ontology image not found. Please ensure 'ontology2.png' is in the same directory.")
     except Exception as e:
         st.error(f"Error loading ontology image: {e}")
-        
+
     try:
         st.image("ontology.PNG", caption="Protege Ontology Diagram", use_column_width=True)
     except FileNotFoundError:
@@ -150,10 +153,10 @@ else:
                     risk_factors = {
                         'Age > 50': age > 50,
                         'BMI ≥ 30': bmi >= 30,
-                        'High Salt Intake': scid > 2325,
+                        'High Salt Intake': scid > 2.325,  # Corrected threshold to grams (was 2325 grams before)
                         'Chronic Stress': los == "Chronic Stress",
                         'Current Smoker': smoking == "Yes",
-                        'Alcohol > 2 drinks/day': alcohol > 355
+                        'Alcohol > 2 drinks/day': alcohol > 28  # 2 drinks ~ 28 ml (approx)
                     }
 
                     for factor, present in risk_factors.items():
@@ -181,7 +184,7 @@ else:
                     st.markdown("**Lifestyle Modifications**")
                     if bmi >= 30:
                         st.write("- Weight reduction program")
-                    if scid > 3:
+                    if scid > 2:
                         st.write("- Sodium restriction (<2g/day)")
                     if pa < 1500:
                         st.write("- Increase physical activity")
@@ -209,25 +212,33 @@ else:
 
                 st.divider()
 
+                # Personalized SHAP-based explanation
                 if hasattr(model, "feature_importances_"):
-                    st.subheader("Key Predictive Factors")
-                    importance = pd.DataFrame({
-                        'Factor': features,
-                        'Impact': model.feature_importances_
-                    }).sort_values('Impact', ascending=False)
+                    st.subheader("Personalized Key Predictive Factors")
+
+                    # Compute SHAP values for current input
+                    shap_values = explainer.shap_values(X_scaled)
+                    instance_shap_values = shap_values[1][0]
+
+                    shap_df = pd.DataFrame({
+                        'Feature': features,
+                        'SHAP Value': instance_shap_values
+                    })
+                    shap_df['abs_shap'] = shap_df['SHAP Value'].abs()
+                    shap_df = shap_df.sort_values(by='abs_shap', ascending=True)
 
                     fig2, ax2 = plt.subplots(figsize=(8, 5))
-                    ax2.barh(importance['Factor'][:8],
-                             importance['Impact'][:8],
-                             color=plt.cm.Blues(np.linspace(0.3, 1, 8)))
-                    ax2.set_xlabel('Relative Importance', fontsize=10)
-                    ax2.set_title('Top Contributing Factors', pad=15, fontsize=12)
+                    colors = ['#e74c3c' if v < 0 else '#2ecc71' for v in shap_df['SHAP Value']]
+                    ax2.barh(shap_df['Feature'], shap_df['SHAP Value'], color=colors)
+                    ax2.set_xlabel('SHAP Value (Impact on Prediction)')
+                    ax2.set_title('Personalized Key Predictive Factors')
                     st.pyplot(fig2)
 
-                    with st.expander("View Complete Factor Analysis"):
-                        st.dataframe(importance.set_index('Factor').style.background_gradient(cmap='Blues'))
-
-                st.divider()
+                    st.markdown("""
+                    - **Green bars** increase risk prediction.
+                    - **Red bars** decrease risk prediction.
+                    """)
 
             except Exception as e:
-                st.error(f"An error occurred during prediction: {e}")
+                st.error(f"Error during prediction: {e}")
+                st.session_state.submitted = False
