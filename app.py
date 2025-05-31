@@ -60,16 +60,14 @@ elif page == "About":
     st.write("""
     ### BPA Risk Prediction Tool
     
-    **Version**: 2.1.0  
-    **Developed by**: Health Analytics Team  
-    **Purpose**: Clinical decision support for BPA exposure risk assessment
+    **Version**: 1.0.0  
+    **Purpose**: Clinical decision support for Blood Pressure Abnormalities exposure risk assessment
     
     **Methodology**:
-    - Machine learning model trained on 10,000+ patient records
+    - Machine learning model trained on 2,000+ patient records
     - Validated with 85% accuracy
     - Incorporates 13 key risk factors
-    
-    **Contact**: bpa-support@healthanalytics.org
+     
     """)
 
 # Main Prediction Page
