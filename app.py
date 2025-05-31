@@ -32,11 +32,9 @@ if page == "Ontology":
     st.title("BPA Ontology")
     st.write("""
     ### Key Concepts and Relationships
-    
-    **Bisphenol A (BPA)**: An industrial chemical used to make polycarbonate plastics
-    and epoxy resins that are used in many consumer products.
-    
+
     **Risk Factor Categories**:
+    - **(BPA)**: Blood Pressure .
     - **Demographic**: Age, Gender, Pregnancy Status
     - **Lifestyle**: Smoking, Alcohol Consumption, Physical Activity
     - **Clinical**: Chronic Kidney Disease, Thyroid Disorders
@@ -55,9 +53,7 @@ if page == "Ontology":
     except Exception as e:
         st.error(f"Error loading ontology image: {e}")
     
-    st.markdown("""
-    [Learn more about BPA risk factors](#)
-    """)
+   
 
 # About page
 elif page == "About":
