@@ -147,10 +147,10 @@ else:
                     risk_factors = {
                         'Age > 50': age > 50,
                         'BMI ≥ 30': bmi >= 30,
-                        'High Salt Intake': scid > 3,
+                        'High Salt Intake': scid > 2325,
                         'Chronic Stress': los == "Chronic Stress",
                         'Current Smoker': smoking == "Yes",
-                        'Alcohol > 2 drinks/day': alcohol > 28
+                        'Alcohol > 2 drinks/day': alcohol > 355
                     }
 
                     for factor, present in risk_factors.items():
