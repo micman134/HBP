@@ -41,7 +41,7 @@ if page == "Ontology":
     try:
         st.image("ontology2.png", caption="HBP Risk Factor Ontology Diagram", use_column_width=True)
     except FileNotFoundError:
-        st.error("Ontology image not found. Please ensure 'ontology2.png' is in the same directory.")
+        st.error("Ontology image not found. Please ensure 'ontology.PNG' is in the same directory.")
     except Exception as e:
         st.error(f"Error loading ontology image: {e}")
         
@@ -111,16 +111,16 @@ else:
                     time.sleep(1)
 
                     input_data = {
-                        'loh': float(loh),
-                        'gpc': float(gpc),
-                        'age': float(age),
-                        'bmi': float(bmi),
+                        'loh': loh,
+                        'gpc': gpc,
+                        'age': age,
+                        'bmi': bmi,
                         'gender': 1 if gender == "Female" else 0,
                         'pregnancy': 1 if pregnancy == "Yes" else 0,
                         'smoking': 1 if smoking == "Yes" else 0,
-                        'pa': float(pa),
-                        'scid': float(scid),
-                        'alcohol': float(alcohol),
+                        'pa': pa,
+                        'scid': scid,
+                        'alcohol': alcohol,
                         'los': ["Acute/normal stress", "Episodic acute stress", "Chronic Stress"].index(los) + 1,
                         'ckd': 1 if ckd == "Yes" else 0,
                         'atd': 1 if atd == "Yes" else 0
@@ -128,33 +128,11 @@ else:
 
                     features = ['loh', 'gpc', 'age', 'bmi', 'gender', 'pregnancy', 'smoking',
                                 'pa', 'scid', 'alcohol', 'los', 'ckd', 'atd']
-
-                    # Construct input vector explicitly as scalars
-                    input_vector = [
-                        input_data['loh'],
-                        input_data['gpc'],
-                        input_data['age'],
-                        input_data['bmi'],
-                        input_data['gender'],
-                        input_data['pregnancy'],
-                        input_data['smoking'],
-                        input_data['pa'],
-                        input_data['scid'],
-                        input_data['alcohol'],
-                        input_data['los'],
-                        input_data['ckd'],
-                        input_data['atd']
-                    ]
-
-                    # Create DataFrame with one row and correct columns
-                    X = pd.DataFrame([input_vector], columns=features)
+                    X = pd.DataFrame([[input_data[feature] for feature in features]], columns=features)
 
                     X_scaled = scaler.transform(X)
                     prediction = model.predict(X_scaled)
-                    if hasattr(model, "predict_proba"):
-                        proba = model.predict_proba(X_scaled)[0]
-                    else:
-                        proba = [0.5, 0.5]  # default if no predict_proba
+                    proba = model.predict_proba(X_scaled)[0] if hasattr(model, "predict_proba") else [0.5, 0.5]
 
                 st.divider()
                 col1, col2 = st.columns([1, 1.5])
@@ -172,10 +150,10 @@ else:
                     risk_factors = {
                         'Age > 50': age > 50,
                         'BMI ≥ 30': bmi >= 30,
-                        'High Salt Intake': scid > 2.325,  # 2.325 grams = 2325 mg salt
+                        'High Salt Intake': scid > 2325,
                         'Chronic Stress': los == "Chronic Stress",
                         'Current Smoker': smoking == "Yes",
-                        'Alcohol > 2 drinks/day': alcohol > 355  # approx 2 standard drinks in ml
+                        'Alcohol > 2 drinks/day': alcohol > 355
                     }
 
                     for factor, present in risk_factors.items():
@@ -203,7 +181,7 @@ else:
                     st.markdown("**Lifestyle Modifications**")
                     if bmi >= 30:
                         st.write("- Weight reduction program")
-                    if scid > 2:
+                    if scid > 3:
                         st.write("- Sodium restriction (<2g/day)")
                     if pa < 1500:
                         st.write("- Increase physical activity")
@@ -252,4 +230,4 @@ else:
                 st.divider()
 
             except Exception as e:
-                st.error(f"Error during prediction: {e}")
+                st.error(f"An error occurred during prediction: {e}")
