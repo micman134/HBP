@@ -1,76 +1,99 @@
 import streamlit as st
 import joblib
+import pandas as pd
+
+# Set page config
+st.set_page_config(page_title="BPA Risk Prediction", layout="wide")
+
+@st.cache_resource
+def load_model():
+    """Load the trained model with caching"""
+    return joblib.load('model.joblib')
 
 # Load the model
-model = joblib.load('model.joblib')
+try:
+    model = load_model()
+except Exception as e:
+    st.error(f"Error loading model: {e}")
+    st.stop()
 
-# Set up the Streamlit app
+# Create the app
 st.title("BPA Risk Prediction Tool")
+st.write("""
+This tool predicts the risk of BPA based on patient characteristics.
+Please fill in all the fields below and click 'Predict'.
+""")
 
-# Create input form
+# Input form
 with st.form("prediction_form"):
-    st.header("Patient Information")
-    
-    # Split inputs into two columns for better layout
     col1, col2 = st.columns(2)
     
     with col1:
-        age = st.number_input("Age", min_value=0, max_value=120, value=30)
-        bmi = st.number_input("BMI", min_value=10.0, max_value=50.0, value=22.0, step=0.1)
-        gender = st.selectbox("Gender", ["Male", "Female"])
-        pregnancy = st.selectbox("Pregnancy Status", ["No", "Yes"])
+        age = st.number_input("Age (years)", min_value=0, max_value=120, value=45)
+        bmi = st.number_input("BMI", min_value=10.0, max_value=50.0, value=25.0, step=0.1)
+        gender = st.radio("Gender", ["Male", "Female"], horizontal=True)
+        pregnancy = st.selectbox("Pregnancy Status", ["No", "Yes"]) if gender == "Female" else "No"
         smoking = st.selectbox("Smoking Status", ["Non-smoker", "Smoker"])
-        los = st.selectbox("Level of Stress", ["Low", "Medium", "High"])
+        los = st.select_slider("Level of Stress", ["Low", "Medium", "High"])
     
     with col2:
         ckd = st.selectbox("Chronic Kidney Disease", ["No", "Yes"])
         atd = st.selectbox("Antidepressant Therapy", ["No", "Yes"])
-        gpc = st.selectbox("General Physical Condition", ["Poor", "Fair", "Good", "Excellent"])
+        gpc = st.select_slider("General Physical Condition", ["Poor", "Fair", "Good", "Excellent"])
         alcohol = st.selectbox("Alcohol Consumption", ["None", "Light", "Moderate", "Heavy"])
-        pa = st.selectbox("Physical Activity", ["Sedentary", "Light", "Moderate", "Active"])
+        pa = st.select_slider("Physical Activity Level", ["Sedentary", "Light", "Moderate", "Active"])
         scid = st.selectbox("SCID Diagnosis", ["No", "Yes"])
-        loh = st.selectbox("Level of Happiness", ["Low", "Medium", "High"])
+        loh = st.select_slider("Level of Happiness", ["Low", "Medium", "High"])
     
-    # Submit button
     submitted = st.form_submit_button("Predict BPA Risk")
-    
-    if submitted:
-        # Convert inputs to model format
-        gender_encoded = 1 if gender == "Female" else 0
-        pregnancy_encoded = 1 if pregnancy == "Yes" else 0
-        smoking_encoded = 1 if smoking == "Smoker" else 0
-        los_encoded = ["Low", "Medium", "High"].index(los)
-        ckd_encoded = 1 if ckd == "Yes" else 0
-        atd_encoded = 1 if atd == "Yes" else 0
-        gpc_encoded = ["Poor", "Fair", "Good", "Excellent"].index(gpc)
-        alcohol_encoded = ["None", "Light", "Moderate", "Heavy"].index(alcohol)
-        pa_encoded = ["Sedentary", "Light", "Moderate", "Active"].index(pa)
-        scid_encoded = 1 if scid == "Yes" else 0
-        loh_encoded = ["Low", "Medium", "High"].index(loh)
+
+# Prediction logic
+if submitted:
+    try:
+        # Encode inputs
+        input_data = {
+            'loh': ["Low", "Medium", "High"].index(loh),
+            'gpc': ["Poor", "Fair", "Good", "Excellent"].index(gpc),
+            'age': age,
+            'bmi': bmi,
+            'gender': 1 if gender == "Female" else 0,
+            'pregnancy': 1 if pregnancy == "Yes" else 0,
+            'smoking': 1 if smoking == "Smoker" else 0,
+            'pa': ["Sedentary", "Light", "Moderate", "Active"].index(pa),
+            'scid': 1 if scid == "Yes" else 0,
+            'alcohol': ["None", "Light", "Moderate", "Heavy"].index(alcohol),
+            'los': ["Low", "Medium", "High"].index(los),
+            'ckd': 1 if ckd == "Yes" else 0,
+            'atd': 1 if atd == "Yes" else 0
+        }
+        
+        # Convert to correct order for model
+        features = ['loh', 'gpc', 'age', 'bmi', 'gender', 'pregnancy', 'smoking', 
+                   'pa', 'scid', 'alcohol', 'los', 'ckd', 'atd']
+        input_values = [[input_data[feature] for feature in features]]
         
         # Make prediction
-        prediction = model.predict([[loh_encoded, gpc_encoded, age, bmi, gender_encoded, 
-                                   pregnancy_encoded, smoking_encoded, pa_encoded, 
-                                   scid_encoded, alcohol_encoded, los_encoded, 
-                                   ckd_encoded, atd_encoded]])
+        prediction = model.predict(input_values)
         
-        # Display result
+        # Display results
         st.subheader("Prediction Result")
         if prediction[0] == 1:
-            st.error("High risk of BPA")
+            st.error("**High risk of BPA**")
+            st.warning("This patient shows characteristics associated with higher BPA risk. Consider additional screening.")
         else:
-            st.success("Low risk of BPA")
+            st.success("**Low risk of BPA**")
+            st.info("This patient shows characteristics associated with lower BPA risk.")
+        
+        # Add some space
+        st.markdown("---")
+        
+        # Show probability if available
+        if hasattr(model, "predict_proba"):
+            proba = model.predict_proba(input_values)[0]
+            st.subheader("Risk Probability")
+            st.write(f"Probability of low risk: {proba[0]:.1%}")
+            st.write(f"Probability of high risk: {proba[1]:.1%}")
+            st.progress(proba[1])
             
-        # Show feature importance if available (for RandomForest)
-        if hasattr(model, 'feature_importances_'):
-            st.subheader("Feature Importance")
-            features = ['Level of Happiness', 'General Physical Condition', 'Age', 'BMI', 
-                        'Gender', 'Pregnancy', 'Smoking', 'Physical Activity', 'SCID Diagnosis', 
-                        'Alcohol', 'Level of Stress', 'Chronic Kidney Disease', 'Antidepressant Therapy']
-            
-            importance_df = pd.DataFrame({
-                'Feature': features,
-                'Importance': model.feature_importances_
-            }).sort_values('Importance', ascending=False)
-            
-            st.bar_chart(importance_df.set_index('Feature'))
+    except Exception as e:
+        st.error(f"An error occurred during prediction: {e}")
