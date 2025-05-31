@@ -103,6 +103,8 @@ else:
         
         submitted = st.form_submit_button("Predict BPA Risk")
 
+   # ... (previous imports and setup remain the same until the prediction logic)
+
     # Prediction logic
     if submitted:
         # Validate all fields are selected
@@ -115,7 +117,7 @@ else:
                 with st.spinner('Analyzing health data and calculating risk...'):
                     time.sleep(1)  # Simulate processing time
                     
-                    # Encode inputs
+                    # Encode inputs (same as before)
                     input_data = {
                         'loh': loh,
                         'gpc': gpc,
@@ -154,32 +156,39 @@ else:
                 
                 st.markdown("---")
                 
-                # Probability chart
-                st.subheader("Risk Probability Distribution")
-                fig1, ax1 = plt.subplots()
-                ax1.bar(['Low Risk', 'High Risk'], proba, color=['green', 'red'])
-                ax1.set_ylim(0, 1)
-                ax1.set_ylabel('Probability')
-                ax1.set_title('BPA Risk Probability')
-                for i, v in enumerate(proba):
-                    ax1.text(i, v + 0.02, f"{v:.1%}", ha='center')
-                st.pyplot(fig1)
+                # Create columns for centered layout
+                col1, col2 = st.columns([1, 2])  # Wider right column for charts
                 
-                # Feature importance
-                if hasattr(model, "feature_importances_"):
-                    st.subheader("Feature Importance Analysis")
-                    importance = model.feature_importances_
-                    feature_importance = pd.DataFrame({'Feature': features, 'Importance': importance})
-                    feature_importance = feature_importance.sort_values('Importance', ascending=False)
+                with col2:
+                    # Probability chart - middle sized
+                    st.subheader("Risk Probability Distribution")
+                    fig1, ax1 = plt.subplots(figsize=(8, 4))  # Adjusted figure size
+                    ax1.bar(['Low Risk', 'High Risk'], proba, color=['green', 'red'])
+                    ax1.set_ylim(0, 1)
+                    ax1.set_ylabel('Probability')
+                    ax1.set_title('HBP Risk Probability', pad=20)
+                    for i, v in enumerate(proba):
+                        ax1.text(i, v + 0.02, f"{v:.1%}", ha='center', fontsize=10)
+                    st.pyplot(fig1)
                     
-                    fig2, ax2 = plt.subplots()
-                    ax2.barh(feature_importance['Feature'], feature_importance['Importance'], color='skyblue')
-                    ax2.set_xlabel('Importance Score')
-                    ax2.set_title('Relative Feature Importance')
-                    st.pyplot(fig2)
-                    
-                    st.write("Top contributing factors:")
-                    st.dataframe(feature_importance.set_index('Feature'))
+                    # Feature importance - middle sized
+                    if hasattr(model, "feature_importances_"):
+                        st.subheader("Feature Importance Analysis")
+                        importance = model.feature_importances_
+                        feature_importance = pd.DataFrame({'Feature': features, 'Importance': importance})
+                        feature_importance = feature_importance.sort_values('Importance', ascending=False)
+                        
+                        fig2, ax2 = plt.subplots(figsize=(8, 5))  # Adjusted figure size
+                        ax2.barh(feature_importance['Feature'], 
+                                feature_importance['Importance'], 
+                                color='skyblue')
+                        ax2.set_xlabel('Importance Score', fontsize=10)
+                        ax2.set_title('Relative Feature Importance', pad=20, fontsize=12)
+                        ax2.tick_params(axis='both', which='major', labelsize=9)
+                        st.pyplot(fig2)
+                        
+                        st.write("Top contributing factors:")
+                        st.dataframe(feature_importance.set_index('Feature').style.format({'Importance': '{:.2f}'}))
                 
             except Exception as e:
                 st.error(f"An error occurred during prediction: {e}")
