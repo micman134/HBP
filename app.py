@@ -175,7 +175,7 @@ else:
 
                 rec_cols = st.columns(3)
                 with rec_cols[0]:
-                    with st.container(border=True):
+                    with st.container():
                         st.markdown("**Lifestyle Modifications**")
                         if bmi >= 30:
                             st.write("- Weight reduction program")
@@ -187,7 +187,7 @@ else:
                             st.write("- Reduce alcohol consumption")
 
                 with rec_cols[1]:
-                    with st.container(border=True):
+                    with st.container():
                         st.markdown("**Clinical Monitoring**")
                         if prediction[0] == 1:
                             st.write("- Weekly BP checks")
@@ -198,7 +198,7 @@ else:
                             st.write("- High-risk obstetric follow-up")
 
                 with rec_cols[2]:
-                    with st.container(border=True):
+                    with st.container():
                         st.markdown("**Specialist Referrals**")
                         if ckd == "Yes":
                             st.write("- Nephrology consult")
@@ -212,10 +212,18 @@ else:
                 if hasattr(model, "feature_importances_"):
                     st.subheader("Key Predictive Factors")
 
+                    importances = model.feature_importances_
+                    importance_sum = importances.sum()
+                    if importance_sum > 0:
+                        importances = importances / importance_sum  # Normalize to sum=1
+
                     importance = pd.DataFrame({
                         'Factor': features,
-                        'Impact': model.feature_importances_
+                        'Impact': importances
                     }).sort_values('Impact', ascending=False)
+
+                    st.write("Normalized feature importances:")
+                    st.dataframe(importance.style.background_gradient(cmap='Blues'))
 
                     fig2, ax2 = plt.subplots(figsize=(8, 5))
                     ax2.barh(importance['Factor'][:8],
@@ -223,6 +231,7 @@ else:
                              color=plt.cm.Blues(np.linspace(0.3, 1, 8)))
                     ax2.set_xlabel('Relative Importance', fontsize=10)
                     ax2.set_title('Top Contributing Factors', pad=15, fontsize=12)
+                    ax2.invert_yaxis()  # highest importance on top
                     st.pyplot(fig2)
 
                     with st.expander("View Complete Factor Analysis"):
