@@ -40,9 +40,9 @@ if page == "Ontology":
     - Lifestyle factors (smoking, alcohol)
     - Health conditions (CKD, thyroid disorders)
     
-    [More details...](#)
+    (#)
     """)
-    st.image("https://via.placeholder.com/600x300?text=Ontology+Diagram", width=600)
+    st.image("ontology.png", width=600)
 
 # About page
 elif page == "About":
