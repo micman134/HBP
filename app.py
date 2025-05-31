@@ -3,6 +3,7 @@ import joblib
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import time  # Added for spinner delay
 
 # Set page config
 st.set_page_config(page_title="BPA Risk Prediction", layout="wide")
@@ -59,32 +60,43 @@ if submitted:
         st.error("Please fill in all fields before submitting")
     else:
         try:
-            # Encode inputs
-            input_data = {
-                'loh': loh,
-                'gpc': gpc,
-                'age': age,
-                'bmi': bmi,
-                'gender': 1 if gender == "Female" else 0,
-                'pregnancy': 1 if pregnancy == "Yes" else 0,
-                'smoking': 1 if smoking == "Yes" else 0,
-                'pa': pa,
-                'scid': scid,
-                'alcohol': alcohol,
-                'los': ["Acute/normal stress", "Episodic acute stress", "Chronic Stress"].index(los) + 1,
-                'ckd': 1 if ckd == "Yes" else 0,
-                'atd': 1 if atd == "Yes" else 0
-            }
+            # Show spinner while processing
+            with st.spinner('Analyzing health data and calculating risk...'):
+                # Add small delay to show spinner (0.5-2 seconds is ideal)
+                time.sleep(1)  # Adjust this value as needed
+                
+                # Encode inputs
+                input_data = {
+                    'loh': loh,
+                    'gpc': gpc,
+                    'age': age,
+                    'bmi': bmi,
+                    'gender': 1 if gender == "Female" else 0,
+                    'pregnancy': 1 if pregnancy == "Yes" else 0,
+                    'smoking': 1 if smoking == "Yes" else 0,
+                    'pa': pa,
+                    'scid': scid,
+                    'alcohol': alcohol,
+                    'los': ["Acute/normal stress", "Episodic acute stress", "Chronic Stress"].index(los) + 1,
+                    'ckd': 1 if ckd == "Yes" else 0,
+                    'atd': 1 if atd == "Yes" else 0
+                }
+                
+                # Convert to correct order for model
+                features = ['loh', 'gpc', 'age', 'bmi', 'gender', 'pregnancy', 'smoking', 
+                           'pa', 'scid', 'alcohol', 'los', 'ckd', 'atd']
+                input_values = [[input_data[feature] for feature in features]]
+                
+                # Make prediction
+                prediction = model.predict(input_values)
+                
+                # Get probabilities if available
+                if hasattr(model, "predict_proba"):
+                    proba = model.predict_proba(input_values)[0]
+                else:
+                    proba = [0.5, 0.5]  # Default if no probabilities available
             
-            # Convert to correct order for model
-            features = ['loh', 'gpc', 'age', 'bmi', 'gender', 'pregnancy', 'smoking', 
-                       'pa', 'scid', 'alcohol', 'los', 'ckd', 'atd']
-            input_values = [[input_data[feature] for feature in features]]
-            
-            # Make prediction
-            prediction = model.predict(input_values)
-            
-            # Display results
+            # Display results after spinner completes
             st.subheader("Prediction Result")
             if prediction[0] == 1:
                 st.error("**High risk of BPA**")
@@ -97,24 +109,20 @@ if submitted:
             st.markdown("---")
             
             # Show probability if available
-            if hasattr(model, "predict_proba"):
-                proba = model.predict_proba(input_values)[0]
-                
-                # Probability chart
-                st.subheader("Risk Probability Distribution")
-                fig1, ax1 = plt.subplots()
-                ax1.bar(['Low Risk', 'High Risk'], proba, color=['green', 'red'])
-                ax1.set_ylim(0, 1)
-                ax1.set_ylabel('Probability')
-                ax1.set_title('BPA Risk Probability')
-                for i, v in enumerate(proba):
-                    ax1.text(i, v + 0.02, f"{v:.1%}", ha='center')
-                st.pyplot(fig1)
-                
-                st.write(f"Probability of low risk: {proba[0]:.1%}")
-                st.write(f"Probability of high risk: {proba[1]:.1%}")
-                st.progress(proba[1])
-                
+            st.subheader("Risk Probability Distribution")
+            fig1, ax1 = plt.subplots()
+            ax1.bar(['Low Risk', 'High Risk'], proba, color=['green', 'red'])
+            ax1.set_ylim(0, 1)
+            ax1.set_ylabel('Probability')
+            ax1.set_title('BPA Risk Probability')
+            for i, v in enumerate(proba):
+                ax1.text(i, v + 0.02, f"{v:.1%}", ha='center')
+            st.pyplot(fig1)
+            
+            st.write(f"Probability of low risk: {proba[0]:.1%}")
+            st.write(f"Probability of high risk: {proba[1]:.1%}")
+            st.progress(proba[1])
+            
             # Feature importance if available
             if hasattr(model, "feature_importances_"):
                 st.subheader("Feature Importance Analysis")
