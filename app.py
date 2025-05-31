@@ -1,0 +1,99 @@
+import streamlit as st
+import joblib
+import pandas as pd
+
+# Set page config
+st.set_page_config(page_title="BPA Risk Prediction", layout="wide")
+
+@st.cache_resource
+def load_model():
+    """Load the trained model with caching"""
+    return joblib.load('model.joblib')
+
+# Load the model
+try:
+    model = load_model()
+except Exception as e:
+    st.error(f"Error loading model: {e}")
+    st.stop()
+
+# Create the app
+st.title("BPA Risk Prediction Tool")
+st.write("""
+This tool predicts the risk of BPA based on patient characteristics.
+Please fill in all the fields below and click 'Predict'.
+""")
+
+# Input form
+with st.form("prediction_form"):
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        age = st.number_input("Age (years)", min_value=0, max_value=120, value=45)
+        bmi = st.number_input("BMI", min_value=10.0, max_value=50.0, value=25.0, step=0.1)
+        gender = st.radio("Gender", ["Male", "Female"], horizontal=True)
+        pregnancy = st.selectbox("Pregnancy Status", ["No", "Yes"]) if gender == "Female" else "No"
+        smoking = st.selectbox("Smoking Status", ["Non-smoker", "Smoker"])
+        los = st.select_slider("Level of Stress", ["Low", "Medium", "High"])
+    
+    with col2:
+        ckd = st.selectbox("Chronic Kidney Disease", ["No", "Yes"])
+        atd = st.selectbox("Antidepressant Therapy", ["No", "Yes"])
+        gpc = st.select_slider("General Physical Condition", ["Poor", "Fair", "Good", "Excellent"])
+        alcohol = st.selectbox("Alcohol Consumption", ["None", "Light", "Moderate", "Heavy"])
+        pa = st.select_slider("Physical Activity Level", ["Sedentary", "Light", "Moderate", "Active"])
+        scid = st.selectbox("SCID Diagnosis", ["No", "Yes"])
+        loh = st.select_slider("Level of Happiness", ["Low", "Medium", "High"])
+    
+    submitted = st.form_submit_button("Predict BPA Risk")
+
+# Prediction logic
+if submitted:
+    try:
+        # Encode inputs
+        input_data = {
+            'loh': ["Low", "Medium", "High"].index(loh),
+            'gpc': ["Poor", "Fair", "Good", "Excellent"].index(gpc),
+            'age': age,
+            'bmi': bmi,
+            'gender': 1 if gender == "Female" else 0,
+            'pregnancy': 1 if pregnancy == "Yes" else 0,
+            'smoking': 1 if smoking == "Smoker" else 0,
+            'pa': ["Sedentary", "Light", "Moderate", "Active"].index(pa),
+            'scid': 1 if scid == "Yes" else 0,
+            'alcohol': ["None", "Light", "Moderate", "Heavy"].index(alcohol),
+            'los': ["Low", "Medium", "High"].index(los),
+            'ckd': 1 if ckd == "Yes" else 0,
+            'atd': 1 if atd == "Yes" else 0
+        }
+        
+        # Convert to correct order for model
+        features = ['loh', 'gpc', 'age', 'bmi', 'gender', 'pregnancy', 'smoking', 
+                   'pa', 'scid', 'alcohol', 'los', 'ckd', 'atd']
+        input_values = [[input_data[feature] for feature in features]]
+        
+        # Make prediction
+        prediction = model.predict(input_values)
+        
+        # Display results
+        st.subheader("Prediction Result")
+        if prediction[0] == 1:
+            st.error("**High risk of BPA**")
+            st.warning("This patient shows characteristics associated with higher BPA risk. Consider additional screening.")
+        else:
+            st.success("**Low risk of BPA**")
+            st.info("This patient shows characteristics associated with lower BPA risk.")
+        
+        # Add some space
+        st.markdown("---")
+        
+        # Show probability if available
+        if hasattr(model, "predict_proba"):
+            proba = model.predict_proba(input_values)[0]
+            st.subheader("Risk Probability")
+            st.write(f"Probability of low risk: {proba[0]:.1%}")
+            st.write(f"Probability of high risk: {proba[1]:.1%}")
+            st.progress(proba[1])
+            
+    except Exception as e:
+        st.error(f"An error occurred during prediction: {e}")
