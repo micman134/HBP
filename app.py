@@ -6,11 +6,11 @@ import numpy as np
 import time
 
 # Set page config
-st.set_page_config(page_title="HBP Risk Prediction Syetem", layout="wide")
+st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
 
 # Sidebar navigation
 with st.sidebar:
-   
+    st.image("https://via.placeholder.com/150x50?text=HBP+Tool", width=150)
     st.title("Menu")
     page = st.radio("Go to", ["Predict", "Ontology", "About"])
 
@@ -32,9 +32,7 @@ if page == "Ontology":
     st.title("Ontology For HBP Prediction System")
     st.write("""
     ### Key Concepts and Relationships
-
     **Risk Factor Categories**:
-    - **(BPA)**: Blood Pressure Abnormalities.
     - **Demographic**: Age, Gender, Pregnancy Status
     - **Lifestyle**: Smoking, Alcohol Consumption, Physical Activity
     - **Clinical**: Chronic Kidney Disease, Thyroid Disorders
@@ -42,41 +40,39 @@ if page == "Ontology":
     - **Genetic**: Inbreeding Coefficient
     """)
     
-    # Display the local ontology image
     try:
-        ontology_image = "ontology.PNG"  # Make sure this matches your filename exactly
-        st.image(ontology_image,
-                caption="BPA Risk Factor Ontology Diagram",
-                use_column_width=True)  # Adjusts to column width
+        st.image("ontology.PNG",
+                caption="HBP Risk Factor Ontology Diagram",
+                use_column_width=True)
     except FileNotFoundError:
         st.error("Ontology image not found. Please ensure 'ontology.PNG' is in the same directory.")
     except Exception as e:
         st.error(f"Error loading ontology image: {e}")
-    
 
 # About page
 elif page == "About":
     st.title("About This Tool")
     st.write("""
     ### High Blood Pressure Risk Prediction Tool
-    
     **Version**: 1.0.0  
-    **Purpose**: Clinical decision support for Blood Pressure Abnormalities exposure risk assessment
-    
+    **Purpose**: Clinical decision support for Blood Pressure Abnormalities risk assessment
     **Methodology**:
     - Machine learning model trained on 2,000+ patient records
     - Validated with 85% accuracy
     - Incorporates 13 key risk factors
-     
     """)
 
 # Main Prediction Page
 else:
-    st.title("Hight Blood Pressure Risk Prediction Tool")
+    st.title("High Blood Pressure Risk Prediction Tool")
     st.write("""
-    This tool predicts the risk of BPA exposure based on patient characteristics.
+    This tool predicts the risk of HBP based on patient characteristics.
     Please fill in all the fields below and click 'Predict'.
     """)
+
+    # Initialize session state for form submission
+    if 'submitted' not in st.session_state:
+        st.session_state.submitted = False
 
     # Input form
     with st.form("prediction_form"):
@@ -101,23 +97,24 @@ else:
             pregnancy = st.selectbox("Pregnancy Status", ["Select", "Yes", "No"], index=0)
             smoking = st.selectbox("Smoking Status", ["Select", "Yes", "No"], index=0)
         
-        submitted = st.form_submit_button("Predict BPA Risk")
+        submitted = st.form_submit_button("Predict HBP Risk")
+        if submitted:
+            st.session_state.submitted = True
 
-   # ... (previous imports and setup remain the same until the prediction logic)
-
-    # Prediction logic
-    if submitted:
+    # Prediction logic - only runs if form was submitted
+    if st.session_state.get('submitted', False):
         # Validate all fields are selected
         if (los == "Select" or ckd == "Select" or atd == "Select" or 
             gender == "Select Gender" or pregnancy == "Select" or smoking == "Select"):
             st.error("Please fill in all fields before submitting")
+            st.session_state.submitted = False
         else:
             try:
                 # Show spinner while processing
                 with st.spinner('Analyzing health data and calculating risk...'):
-                    time.sleep(1)  # Simulate processing time
+                    time.sleep(1)
                     
-                    # Encode inputs (same as before)
+                    # Encode inputs
                     input_data = {
                         'loh': loh,
                         'gpc': gpc,
@@ -139,56 +136,49 @@ else:
                     input_values = [[input_data[feature] for feature in features]]
                     
                     prediction = model.predict(input_values)
-                    
-                    if hasattr(model, "predict_proba"):
-                        proba = model.predict_proba(input_values)[0]
+                    proba = model.predict_proba(input_values)[0] if hasattr(model, "predict_proba") else [0.5, 0.5]
+                
+                # Display results in two columns (charts on left)
+                col_results, col_charts = st.columns([1, 1.5])
+                
+                with col_results:
+                    st.subheader("Prediction Result")
+                    if prediction[0] == 1:
+                        st.error("**High risk of HBP**")
+                        st.warning("This patient shows characteristics associated with higher HBP risk. Consider additional screening.")
                     else:
-                        proba = [0.5, 0.5]
+                        st.success("**Low risk of HBP**")
+                        st.info("This patient shows characteristics associated with lower HBP risk.")
+                    
+                    st.markdown("---")
+                    st.write(f"**Probability of low risk:** {proba[0]:.1%}")
+                    st.write(f"**Probability of high risk:** {proba[1]:.1%}")
+                    st.progress(proba[1])
                 
-                # Display results
-                st.subheader("Prediction Result")
-                if prediction[0] == 1:
-                    st.error("**High risk of BPA**")
-                    st.warning("This patient shows characteristics associated with higher BPA risk. Consider additional screening.")
-                else:
-                    st.success("**Low risk of Blood Pressure Abnormalities**")
-                    st.info("This patient shows characteristics associated with lower HBP risk.")
-                
-                st.markdown("---")
-                
-                # Create columns for centered layout
-                col1, col2 = st.columns([1, 2])  # Wider right column for charts
-                
-                with col2:
-                    # Probability chart - middle sized
-                    st.subheader("Risk Probability Distribution")
-                    fig1, ax1 = plt.subplots(figsize=(8, 4))  # Adjusted figure size
+                with col_charts:
+                    # Probability chart (left side)
+                    st.subheader("Risk Probability")
+                    fig1, ax1 = plt.subplots(figsize=(7, 4))
                     ax1.bar(['Low Risk', 'High Risk'], proba, color=['green', 'red'])
                     ax1.set_ylim(0, 1)
                     ax1.set_ylabel('Probability')
-                    ax1.set_title('HBP Risk Probability', pad=20)
                     for i, v in enumerate(proba):
-                        ax1.text(i, v + 0.02, f"{v:.1%}", ha='center', fontsize=10)
+                        ax1.text(i, v + 0.02, f"{v:.1%}", ha='center')
                     st.pyplot(fig1)
                     
-                    # Feature importance - middle sized
+                    # Feature importance (left side)
                     if hasattr(model, "feature_importances_"):
-                        st.subheader("Feature Importance Analysis")
+                        st.subheader("Feature Importance")
                         importance = model.feature_importances_
-                        feature_importance = pd.DataFrame({'Feature': features, 'Importance': importance})
-                        feature_importance = feature_importance.sort_values('Importance', ascending=False)
+                        fi_df = pd.DataFrame({'Feature': features, 'Importance': importance}).sort_values('Importance', ascending=False)
                         
-                        fig2, ax2 = plt.subplots(figsize=(8, 5))  # Adjusted figure size
-                        ax2.barh(feature_importance['Feature'], 
-                                feature_importance['Importance'], 
-                                color='skyblue')
-                        ax2.set_xlabel('Importance Score', fontsize=10)
-                        ax2.set_title('Relative Feature Importance', pad=20, fontsize=12)
-                        ax2.tick_params(axis='both', which='major', labelsize=9)
+                        fig2, ax2 = plt.subplots(figsize=(7, 5))
+                        ax2.barh(fi_df['Feature'], fi_df['Importance'], color='skyblue')
+                        ax2.set_xlabel('Importance Score')
                         st.pyplot(fig2)
                         
-                        st.write("Top contributing factors:")
-                        st.dataframe(feature_importance.set_index('Feature').style.format({'Importance': '{:.2f}'}))
+                        with st.expander("View Feature Importance Table"):
+                            st.dataframe(fi_df.set_index('Feature').style.format({'Importance': '{:.3f}'}))
                 
             except Exception as e:
                 st.error(f"An error occurred during prediction: {e}")
