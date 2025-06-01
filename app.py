@@ -5,6 +5,24 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 
+# Hide Streamlit default UI and style footer
+st.markdown("""
+    <style>
+    /* Hide default Streamlit UI */
+    #MainMenu, footer, header {visibility: hidden;}
+    .stDeployButton, .st-emotion-cache-13ln4jf, button[kind="icon"] {
+        display: none !important;
+    }
+    .custom-footer {
+        text-align: center;
+        font-size: 14px;
+        margin-top: 50px;
+        padding: 20px;
+        color: #aaa;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # Set page config
 st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
 
