@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 
+# Set page config
+st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
+
 # Hide Streamlit default UI and style footer
 st.markdown("""
     <style>
@@ -22,9 +25,6 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-
-# Set page config
-st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
 
 # Sidebar navigation
 with st.sidebar:
