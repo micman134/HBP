@@ -114,7 +114,7 @@ def save_prediction_to_firestore(user_id, input_data, prediction, probability):
             }
         }
         
-        db.collection('predictions').add(prediction_data)
+        db.collection('hbp_predictions').add(prediction_data)
         return True
     except Exception as e:
         st.error(f"Error saving prediction: {e}")
@@ -122,7 +122,7 @@ def save_prediction_to_firestore(user_id, input_data, prediction, probability):
 
 def get_user_predictions_from_firestore(user_id):
     try:
-        predictions_ref = db.collection('predictions').where('user_id', '==', user_id).order_by('timestamp', direction=firestore.Query.DESCENDING)
+        predictions_ref = db.collection('hbp_predictions').where('user_id', '==', user_id).order_by('timestamp', direction=firestore.Query.DESCENDING)
         predictions = predictions_ref.stream()
         
         results = []
