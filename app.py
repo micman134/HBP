@@ -12,7 +12,7 @@ from datetime import datetime
 if not firebase_admin._apps:
     try:
         # Load your Firebase credentials (replace with your actual config)
-        cred = credentials.Certificate("your-firebase-adminsdk.json")  # Download from Firebase console
+        cred = credentials.Certificate("diabetes_key.json")  # Download from Firebase console
         firebase_admin.initialize_app(cred)
     except Exception as e:
         st.error(f"Error initializing Firebase: {e}")
