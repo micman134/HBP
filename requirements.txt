@@ -9,3 +9,4 @@ tzdata==2023.4  # Required by pandas for timezone support
 Pillow==10.1.0  # For image processing
 fpdf2==2.7.7
 shap
+firebase-admin
