@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "diabetes-prediction-75a30",
+  "private_key_id": "bdedd9c385f3db5e11245eb70266abcea6d91987",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDS7T2+mBir5tBZ\nOErGhGjDgMlzTh9URvqn5FwmUde5TVlwH+9Gvkhm6txH5MlRrno2p0YpoWR0jkXn\nXXc+pqBMGgUnUX6QsVbdbzJt6qArZah7oFC0KvJIVZNzTQeXbsBVbuEm4BM8Ik+R\nGJhV4pmRv3s7i9VIsQtR3fTQXQaocKDxQuiW4yVDTCwGj84PwxWmZb+/a8dIFmXz\n4+9Un2pF514ax6FFHLorFo19QRrp9gAbJ3PFqWsCThaQ4I2oRGk6QiD7ER/BE5FD\n5x/OCfbGSACLK8sOlTkBzzlRi0oYlaNCcaUCFjzsyDTFd32EpUVI7vuGrGv3aYTP\nbmo8PO1hAgMBAAECggEAE/tOlJ4zBCHvDeyzxL+pbw/lxasac7DvsPUEt8qcDZ1i\nwij8UW7YTAumx5bIbZkCUegh0PLNoe8SdzsW/1PorpzubQ2e2FU8fei5Vcla2BGe\n1utWieLhpfGZcNxUwkdHKDDDWpvypok3kW7Li6NWWgTSR09Varf+8wf8V7rgVRd+\nP9vwW5tgkNXUxovupN5cTdXHPWx9BDA4kRi15neWrfdrzR2NW5fYWuBFAAJYVbH8\navyjy+3VIEPJ1Q88aOWDXhrQYjZHg9OAsYpkHWopFQxuCcIbvFI5VjCunU6EpgV1\nfsv07n2XacBnzu3eQwtVBrU0C4tDFie4iSfrkreBiwKBgQD4UA+TMz782/AC1W7m\nXD2UgCN4w3QQxuiGPFC5axgXgFEjWKElfMWr3Xe0oRyZKkOywmYX2DjxEK/VpBVk\n1yCJaLL/NI0s0uhRj/gccEpAcA830SOOUaw26OlisbmbFYP8zjnXr9R5IOzVIDCT\nvUcE/wpWyIgnjWgGYvrZM+F3swKBgQDZdOMVacE4dJ70gAqcQGrMaeZIFte3y9K8\nl+qq5+E0+mc2Qy1Jx9Y+X2hh45Ix9bMUtpSWjyHh6Ss1E5d+qQXYXvvIkKhJhFd4\npRtKtWvSfalUAbYJtsnkCpbCkIQQGGcrHPggrXcQQA+tHDAfp4LdI+2PaigI5YJM\n4uW2fOa8mwKBgQCY0EyFfmgpHQFb/RW+1s1e8mziCQcIvCClW8EiGvI8pE9KvWSO\nuXa9ChJ9Kxl6eTQoctJ5oiuIz4gmplA0OuBfL/vYavLmvvUSHNPITKKlfVEgPKjx\nEPo24KeggVeERX1wu0mFn0PXN5gIoULD6Rwnyv0F42tHTBLUu109BlyfWQKBgDlI\ngUlywmOM1RKzaBghIAEZJIB5A/p2xtzHaBn9W2YJUIcKyzNUYSutFmIzAKAIiVQ7\nhIjky5gnRCqHLrE+9Ts6SjlbYfl7008Er1vOzsh0MdbfXITSkfxwjaZTS3ax9vt0\ndiiliWfOeFKxyjuMdPysKjhNTp6JVvnKC5k27dFhAoGAbkiMxLJs/Gv+MV/si02U\nbesxCLiARCrkv0l1l2ftk1VyZ7qbtyq+OIDaOaK/+aDJ+GHFjy4FqCX4FyLC6BMm\ngDwD/Dhc7qJbUji0RqQpnfGl5OjAS4YcH/m8WOWVQ6AM1G42UCW22B0zmqmKeOqH\neqfksdCmssifn0LlXdq3iSw=\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-fbsvc@diabetes-prediction-75a30.iam.gserviceaccount.com",
+  "client_id": "114400130189557984468",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40diabetes-prediction-75a30.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
