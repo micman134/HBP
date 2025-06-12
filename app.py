@@ -11,7 +11,7 @@ from datetime import datetime
 # Initialize Firebase (only once)
 if not firebase_admin._apps:
     try:
-        # Get Firebase credentials from Streamlit secrets
+        # Get Firebase config from Streamlit secrets
         firebase_config = {
             "type": st.secrets["firebase"]["type"],
             "project_id": st.secrets["firebase"]["project_id"],
@@ -26,11 +26,13 @@ if not firebase_admin._apps:
             "universe_domain": st.secrets["firebase"]["universe_domain"]
         }
         
+        # Initialize Firebase
         cred = credentials.Certificate(firebase_config)
         firebase_admin.initialize_app(cred)
     except Exception as e:
-        st.error(f"Error initializing Firebase: {e}")
+        st.error(f"Firebase initialization error: {str(e)}")
         st.stop()
+
 # Initialize Firestore
 db = firestore.client()
 
