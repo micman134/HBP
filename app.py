@@ -4,6 +4,22 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import time
+import firebase_admin
+from firebase_admin import credentials, auth, firestore
+from datetime import datetime
+
+# Initialize Firebase (only once)
+if not firebase_admin._apps:
+    try:
+        # Load your Firebase credentials (replace with your actual config)
+        cred = credentials.Certificate("your-firebase-adminsdk.json")  # Download from Firebase console
+        firebase_admin.initialize_app(cred)
+    except Exception as e:
+        st.error(f"Error initializing Firebase: {e}")
+        st.stop()
+
+# Initialize Firestore
+db = firestore.client()
 
 # Set page config
 st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
@@ -26,10 +42,134 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Sidebar navigation
-with st.sidebar:
-    st.title("Menu")
-    page = st.radio("Go to", ["Predict", "Ontology", "About"])
+# Authentication state
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+if 'user_email' not in st.session_state:
+    st.session_state.user_email = None
+if 'user_id' not in st.session_state:
+    st.session_state.user_id = None
+
+# Authentication functions
+def firebase_signup(email, password):
+    try:
+        user = auth.create_user(
+            email=email,
+            password=password
+        )
+        return user.uid
+    except Exception as e:
+        st.error(f"Signup error: {e}")
+        return None
+
+def firebase_login(email, password):
+    try:
+        # In a real app, you would use Firebase Auth client SDK for web/mobile
+        # This is a simplified version for Streamlit
+        user = auth.get_user_by_email(email)
+        
+        # In production, you would verify the password properly
+        # This is just for demonstration
+        st.session_state.authenticated = True
+        st.session_state.user_email = email
+        st.session_state.user_id = user.uid
+        return True
+    except Exception as e:
+        st.error(f"Login error: {e}")
+        return False
+
+def firebase_logout():
+    st.session_state.authenticated = False
+    st.session_state.user_email = None
+    st.session_state.user_id = None
+
+# Data storage functions
+def save_prediction_to_firestore(user_id, input_data, prediction, probability):
+    try:
+        prediction_data = {
+            'user_id': user_id,
+            'timestamp': firestore.SERVER_TIMESTAMP,
+            'age': input_data['age'],
+            'bmi': input_data['bmi'],
+            'loh': input_data['loh'],
+            'gpc': input_data['gpc'],
+            'pa': input_data['pa'],
+            'scid': input_data['scid'],
+            'alcohol': input_data['alcohol'],
+            'los': input_data['los'],
+            'ckd': input_data['ckd'],
+            'atd': input_data['atd'],
+            'gender': input_data['gender'],
+            'pregnancy': input_data['pregnancy'],
+            'smoking': input_data['smoking'],
+            'prediction_result': int(prediction[0]),
+            'prediction_probability': float(probability[1]),
+            'risk_factors': {
+                'age_gt_50': input_data['age'] > 50,
+                'bmi_gt_30': input_data['bmi'] >= 30,
+                'high_salt': input_data['scid'] > 2325,
+                'chronic_stress': input_data['los'] == "Chronic Stress",
+                'smoker': input_data['smoking'] == "Yes",
+                'high_alcohol': input_data['alcohol'] > 355
+            }
+        }
+        
+        db.collection('predictions').add(prediction_data)
+        return True
+    except Exception as e:
+        st.error(f"Error saving prediction: {e}")
+        return False
+
+def get_user_predictions_from_firestore(user_id):
+    try:
+        predictions_ref = db.collection('predictions').where('user_id', '==', user_id).order_by('timestamp', direction=firestore.Query.DESCENDING)
+        predictions = predictions_ref.stream()
+        
+        results = []
+        for pred in predictions:
+            pred_data = pred.to_dict()
+            pred_data['id'] = pred.id
+            results.append(pred_data)
+        
+        return results
+    except Exception as e:
+        st.error(f"Error fetching predictions: {e}")
+        return []
+
+# Authentication form
+def show_auth_form():
+    auth_tab1, auth_tab2 = st.tabs(["Login", "Sign Up"])
+    
+    with auth_tab1:
+        with st.form("login_form"):
+            login_email = st.text_input("Email", key="login_email")
+            login_password = st.text_input("Password", type="password", key="login_pass")
+            login_submitted = st.form_submit_button("Login")
+            
+            if login_submitted:
+                if firebase_login(login_email, login_password):
+                    st.rerun()
+
+    with auth_tab2:
+        with st.form("signup_form"):
+            signup_email = st.text_input("Email", key="signup_email")
+            signup_password = st.text_input("Password", type="password", key="signup_pass")
+            signup_confirm = st.text_input("Confirm Password", type="password", key="signup_confirm")
+            signup_submitted = st.form_submit_button("Create Account")
+            
+            if signup_submitted:
+                if signup_password != signup_confirm:
+                    st.error("Passwords don't match")
+                elif len(signup_password) < 6:
+                    st.error("Password must be at least 6 characters")
+                else:
+                    user_id = firebase_signup(signup_email, signup_password)
+                    if user_id:
+                        st.success("Account created successfully! Please login.")
+                        st.session_state.authenticated = True
+                        st.session_state.user_email = signup_email
+                        st.session_state.user_id = user_id
+                        st.rerun()
 
 # Load model and scaler (cached)
 @st.cache_resource
@@ -43,6 +183,20 @@ try:
 except Exception as e:
     st.error(f"Error loading model or scaler: {e}")
     st.stop()
+
+# Sidebar navigation
+with st.sidebar:
+    if st.session_state.authenticated:
+        st.title(f"Welcome, {st.session_state.user_email}")
+        if st.button("Logout"):
+            firebase_logout()
+            st.rerun()
+        
+        st.divider()
+        page = st.radio("Menu", ["Predict", "History", "Ontology", "About"])
+    else:
+        st.title("Menu")
+        page = st.radio("Menu", ["Predict", "Ontology", "About"])
 
 # Ontology page
 if page == "Ontology":
@@ -83,8 +237,52 @@ elif page == "About":
     - Incorporates 13 key risk factors
     """)
 
+# Prediction History page
+elif page == "History":
+    if not st.session_state.authenticated:
+        st.warning("Please login to view your prediction history")
+    else:
+        st.title("Your Prediction History")
+        predictions = get_user_predictions_from_firestore(st.session_state.user_id)
+        
+        if not predictions:
+            st.info("No predictions found in your history")
+        else:
+            st.write(f"Found {len(predictions)} predictions in your history")
+            
+            # Convert to DataFrame for better display
+            history_data = []
+            for pred in predictions:
+                history_data.append({
+                    "Date": pred['timestamp'].strftime("%Y-%m-%d %H:%M") if 'timestamp' in pred else "N/A",
+                    "Age": pred['age'],
+                    "Gender": pred['gender'],
+                    "High Risk": "Yes" if pred['prediction_result'] == 1 else "No",
+                    "Probability": f"{pred['prediction_probability']:.1%}",
+                    "Risk Factors": ", ".join([k for k, v in pred['risk_factors'].items() if v])
+                })
+            
+            history_df = pd.DataFrame(history_data)
+            st.dataframe(history_df, hide_index=True, use_container_width=True)
+            
+            # Show some statistics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Predictions", len(predictions))
+            with col2:
+                high_risk_count = sum(1 for p in predictions if p['prediction_result'] == 1)
+                st.metric("High Risk Predictions", high_risk_count)
+            with col3:
+                avg_age = sum(p['age'] for p in predictions) / len(predictions)
+                st.metric("Average Age", f"{avg_age:.1f} years")
+
 # Prediction page
 else:
+    if not st.session_state.authenticated:
+        st.title("Please Login to Use the Prediction Tool")
+        show_auth_form()
+        st.stop()
+    
     st.title("High Blood Pressure Risk Prediction Tool")
     st.write("""
     This tool predicts the risk of HBP based on patient characteristics.
@@ -133,6 +331,26 @@ else:
                         'gpc': gpc,
                         'age': age,
                         'bmi': bmi,
+                        'gender': "Female" if gender == "Female" else "Male",
+                        'pregnancy': pregnancy,
+                        'smoking': smoking,
+                        'pa': pa,
+                        'scid': scid,
+                        'alcohol': alcohol,
+                        'los': los,
+                        'ckd': ckd,
+                        'atd': atd
+                    }
+
+                    features = ['loh', 'gpc', 'age', 'bmi', 'gender', 'pregnancy', 'smoking',
+                                'pa', 'scid', 'alcohol', 'los', 'ckd', 'atd']
+                    
+                    # Prepare data for model
+                    model_input = {
+                        'loh': loh,
+                        'gpc': gpc,
+                        'age': age,
+                        'bmi': bmi,
                         'gender': 1 if gender == "Female" else 0,
                         'pregnancy': 1 if pregnancy == "Yes" else 0,
                         'smoking': 1 if smoking == "Yes" else 0,
@@ -143,14 +361,14 @@ else:
                         'ckd': 1 if ckd == "Yes" else 0,
                         'atd': 1 if atd == "Yes" else 0
                     }
-
-                    features = ['loh', 'gpc', 'age', 'bmi', 'gender', 'pregnancy', 'smoking',
-                                'pa', 'scid', 'alcohol', 'los', 'ckd', 'atd']
-                    X = pd.DataFrame([[input_data[feature] for feature in features]], columns=features)
-
+                    
+                    X = pd.DataFrame([[model_input[feature] for feature in features]], columns=features)
                     X_scaled = scaler.transform(X)
                     prediction = model.predict(X_scaled)
                     proba = model.predict_proba(X_scaled)[0] if hasattr(model, "predict_proba") else [0.5, 0.5]
+
+                    # Save prediction to Firestore
+                    save_prediction_to_firestore(st.session_state.user_id, input_data, prediction, proba)
 
                 st.divider()
                 col1, col2 = st.columns([1, 1.5])
@@ -249,3 +467,10 @@ else:
 
             except Exception as e:
                 st.error(f"An error occurred during prediction: {e}")
+
+# Custom footer
+st.markdown("""
+<div class="custom-footer">
+    High Blood Pressure Risk Prediction System © 2023 | Clinical Decision Support Tool
+</div>
+""", unsafe_allow_html=True)
