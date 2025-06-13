@@ -9,7 +9,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 # Set page config
-st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
+st.set_page_config(page_title="HBP Risk Prediction System", layout="")
 
 # Hide Streamlit default UI and style footer
 st.markdown("""
