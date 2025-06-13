@@ -4,8 +4,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import time
-import warnings
-warnings.filterwarnings("ignore", category=FutureWarning)
+# import warnings
+# warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Set page config
 st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
