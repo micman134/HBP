@@ -422,6 +422,6 @@ else:
 # Footer
 st.markdown("""
 <div class="custom-footer">
-    High Blood Pressure Risk Prediction System © 2023 | Clinical Decision Support Tool
+    High Blood Pressure Risk Prediction System © 2025 | Clinical Decision Support Tool
 </div>
 """, unsafe_allow_html=True)
