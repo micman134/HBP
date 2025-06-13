@@ -4,8 +4,37 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import time
-# import warnings
-# warnings.filterwarnings("ignore", category=FutureWarning)
+import firebase_admin
+from firebase_admin import credentials, db
+from datetime import datetime
+from uuid import uuid4
+
+# Initialize Firebase (only once)
+def initialize_firebase():
+    if not firebase_admin._apps:
+        try:
+            # Use Streamlit secrets for Firebase configuration
+            firebase_cred = {
+                "type": st.secrets["firebase"]["type"],
+                "project_id": st.secrets["firebase"]["project_id"],
+                "private_key_id": st.secrets["firebase"]["private_key_id"],
+                "private_key": st.secrets["firebase"]["private_key"].replace('\\n', '\n'),
+                "client_email": st.secrets["firebase"]["client_email"],
+                "client_id": st.secrets["firebase"]["client_id"],
+                "auth_uri": st.secrets["firebase"]["auth_uri"],
+                "token_uri": st.secrets["firebase"]["token_uri"],
+                "auth_provider_x509_cert_url": st.secrets["firebase"]["auth_provider_x509_cert_url"],
+                "client_x509_cert_url": st.secrets["firebase"]["client_x509_cert_url"]
+            }
+            
+            cred = credentials.Certificate(firebase_cred)
+            firebase_admin.initialize_app(cred, {
+                'databaseURL': st.secrets["firebase"]["databaseURL"]
+            })
+        except Exception as e:
+            st.error(f"Failed to initialize Firebase: {str(e)}")
+            return False
+    return True
 
 # Set page config
 st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
@@ -31,7 +60,7 @@ st.markdown("""
 # Sidebar navigation
 with st.sidebar:
     st.title("Menu")
-    page = st.radio("Go to", ["Predict", "Ontology", "About"])
+    page = st.radio("Go to", ["Predict", "Ontology", "About", "View Predictions"])
 
 # Load model and scaler (cached)
 @st.cache_resource
@@ -45,6 +74,68 @@ try:
 except Exception as e:
     st.error(f"Error loading model or scaler: {e}")
     st.stop()
+
+# Initialize Firebase
+if not initialize_firebase():
+    st.stop()
+
+# Function to save prediction to Firebase
+def save_prediction_to_firebase(input_data, prediction, proba):
+    try:
+        prediction_data = {
+            'id': str(uuid4()),
+            'input_data': input_data,
+            'prediction': int(prediction[0]),
+            'probability': float(proba[1]),  # Probability of high risk
+            'timestamp': datetime.now().isoformat(),
+            'recommendations': {
+                'lifestyle': [],
+                'monitoring': [],
+                'referrals': []
+            }
+        }
+
+        # Add recommendations
+        if input_data['bmi'] >= 30:
+            prediction_data['recommendations']['lifestyle'].append("Weight reduction program")
+        if input_data['scid'] > 3:
+            prediction_data['recommendations']['lifestyle'].append("Sodium restriction (<2g/day)")
+        if input_data['pa'] < 1500:
+            prediction_data['recommendations']['lifestyle'].append("Increase physical activity")
+        if input_data['alcohol'] > 14:
+            prediction_data['recommendations']['lifestyle'].append("Reduce alcohol consumption")
+        
+        if prediction[0] == 1:
+            prediction_data['recommendations']['monitoring'].append("Weekly BP checks")
+            prediction_data['recommendations']['monitoring'].append("Renal function tests")
+        else:
+            prediction_data['recommendations']['monitoring'].append("Annual screening")
+        
+        if input_data['pregnancy'] == 1:
+            prediction_data['recommendations']['monitoring'].append("High-risk obstetric follow-up")
+        
+        if input_data['ckd'] == 1:
+            prediction_data['recommendations']['referrals'].append("Nephrology consult")
+        if input_data['atd'] == 1:
+            prediction_data['recommendations']['referrals'].append("Endocrinology evaluation")
+        if input_data['los'] == 3:  # Chronic Stress
+            prediction_data['recommendations']['referrals'].append("Behavioral health referral")
+
+        # Push data to Firebase
+        ref = db.reference('predictions')
+        new_prediction_ref = ref.push(prediction_data)
+        return True, new_prediction_ref.key
+    except Exception as e:
+        return False, str(e)
+
+# Function to get all predictions from Firebase
+def get_predictions_from_firebase():
+    try:
+        ref = db.reference('predictions')
+        predictions = ref.get()
+        return True, predictions if predictions else {}
+    except Exception as e:
+        return False, str(e)
 
 # Ontology page
 if page == "Ontology":
@@ -84,6 +175,47 @@ elif page == "About":
     - Validated with 85% accuracy
     - Incorporates 13 key risk factors
     """)
+
+# View Predictions page
+elif page == "View Predictions":
+    st.title("Stored Predictions")
+    st.write("Viewing all predictions stored in the database")
+    
+    success, predictions = get_predictions_from_firebase()
+    
+    if not success:
+        st.error(f"Failed to retrieve predictions: {predictions}")
+    else:
+        if not predictions:
+            st.info("No predictions found in the database")
+        else:
+            st.write(f"Found {len(predictions)} predictions")
+            
+            for pred_id, pred_data in predictions.items():
+                with st.expander(f"Prediction {pred_id[:8]}... - {pred_data['timestamp']}"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.subheader("Input Data")
+                        st.json(pred_data['input_data'])
+                        
+                    with col2:
+                        st.subheader("Results")
+                        st.write(f"**Prediction:** {'High Risk' if pred_data['prediction'] == 1 else 'Low Risk'}")
+                        st.write(f"**Probability:** {pred_data['probability']:.1%}")
+                        
+                        st.subheader("Recommendations")
+                        st.write("**Lifestyle Modifications:**")
+                        for rec in pred_data['recommendations']['lifestyle']:
+                            st.write(f"- {rec}")
+                            
+                        st.write("**Clinical Monitoring:**")
+                        for rec in pred_data['recommendations']['monitoring']:
+                            st.write(f"- {rec}")
+                            
+                        st.write("**Specialist Referrals:**")
+                        for rec in pred_data['recommendations']['referrals']:
+                            st.write(f"- {rec}")
 
 # Prediction page
 else:
@@ -155,6 +287,11 @@ else:
                     X_scaled = scaler.transform(X)
                     prediction = model.predict(X_scaled)
                     proba = model.predict_proba(X_scaled)[0] if hasattr(model, "predict_proba") else [0.5, 0.5]
+
+                    # Save to Firebase
+                    success, result = save_prediction_to_firebase(input_data, prediction, proba)
+                    if not success:
+                        st.error(f"Failed to save prediction: {result}")
 
                 st.divider()
                 col1, col2 = st.columns([1, 1.5])
@@ -253,3 +390,10 @@ else:
 
             except Exception as e:
                 st.error(f"An error occurred during prediction: {e}")
+
+# Footer
+st.markdown("""
+<div class="custom-footer">
+    High Blood Pressure Risk Prediction System © 2023 | Clinical Decision Support Tool
+</div>
+""", unsafe_allow_html=True)
