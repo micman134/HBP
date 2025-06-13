@@ -7,9 +7,10 @@ import time
 import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 # Set page config
-st.set_page_config(page_title="HBP Risk Prediction System", layout="")
+st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
 
 # Hide Streamlit default UI and style footer
 st.markdown("""
@@ -33,7 +34,9 @@ st.markdown("""
 @st.cache_resource
 def init_firebase():
     try:
+        # Check if Firebase app is already initialized
         if not firebase_admin._apps:
+            # Load credentials from secrets
             firebase_creds = {
                 "type": st.secrets["firebase"]["type"],
                 "project_id": st.secrets["firebase"]["project_id"],
@@ -46,6 +49,7 @@ def init_firebase():
                 "auth_provider_x509_cert_url": st.secrets["firebase"]["auth_provider_x509_cert_url"],
                 "client_x509_cert_url": st.secrets["firebase"]["client_x509_cert_url"]
             }
+            
             cred = credentials.Certificate(firebase_creds)
             firebase_admin.initialize_app(cred)
         return firestore.client()
@@ -89,6 +93,7 @@ def save_prediction_to_firestore(input_data, prediction, proba):
             }
         }
         
+        # Add a new document with auto-generated ID
         doc_ref = predictions_ref.add(prediction_data)
         return True
         
@@ -117,6 +122,11 @@ def get_all_predictions():
         st.error(f"Error fetching predictions: {e}")
         return None
 
+# Sidebar navigation
+with st.sidebar:
+    st.title("Menu")
+    page = st.radio("Go to", ["Predict", "View History", "Ontology", "About"])
+
 # Load model and scaler (cached)
 @st.cache_resource
 def load_model_and_scaler():
@@ -130,11 +140,114 @@ except Exception as e:
     st.error(f"Error loading model or scaler: {e}")
     st.stop()
 
-# Create tabs for navigation
-tab1, tab2, tab3, tab4 = st.tabs(["Predict", "History", "Ontology", "About"])
+# Ontology page
+if page == "Ontology":
+    st.title("Ontology For HBP Prediction System")
+    st.write("""
+    ### Key Concepts and Relationships
+    **Risk Factor Categories**:
+    - **Demographic**: Age, Gender, Pregnancy Status
+    - **Lifestyle**: Smoking, Alcohol Consumption, Physical Activity
+    - **Clinical**: Chronic Kidney Disease, Thyroid Disorders
+    - **Biochemical**: Hemoglobin Levels, Salt Intake
+    - **Genetic**: Inbreeding Coefficient
+    """)
+    try:
+        st.image("ontology2.png", caption="HBP Risk Factor Ontology Diagram", use_column_width=True)
+    except FileNotFoundError:
+        st.error("Ontology image not found. Please ensure 'ontology.PNG' is in the same directory.")
+    except Exception as e:
+        st.error(f"Error loading ontology image: {e}")
+        
+    try:
+        st.image("ontology.PNG", caption="Protege Ontology Diagram", use_column_width=True)
+    except FileNotFoundError:
+        st.error("Ontology image not found. Please ensure 'ontology.PNG' is in the same directory.")
+    except Exception as e:
+        st.error(f"Error loading ontology image: {e}")
 
-# Prediction Tab
-with tab1:
+# About page
+elif page == "About":
+    st.title("About This Tool")
+    st.write("""
+    ### High Blood Pressure Risk Prediction Tool
+    **Version**: 1.0.0  
+    **Purpose**: Clinical decision support for Blood Pressure Abnormalities risk assessment  
+    **Methodology**:
+    - Machine learning model trained on 2,000+ patient records
+    - Validated with 85% accuracy
+    - Incorporates 13 key risk factors
+    - Data stored securely in Firebase Firestore
+    """)
+
+# View History page
+elif page == "View History":
+    st.title("Prediction History")
+    
+    with st.spinner('Loading prediction history...'):
+        predictions = get_all_predictions()
+    
+    if predictions:
+        st.write(f"Found {len(predictions)} historical predictions")
+        
+        # Convert to DataFrame for display
+        history_df = pd.DataFrame([{
+            'Date': pred['timestamp'].strftime('%Y-%m-%d %H:%M'),
+            'Age': pred['age'],
+            'Gender': pred['gender'],
+            'Prediction': pred['prediction'],
+            'Probability': f"{pred['probability']:.1%}",
+            'Risk Factors': ', '.join([k.replace('_', ' ') for k, v in pred['risk_factors'].items() if v])
+        } for pred in predictions])
+        
+        st.dataframe(history_df, use_container_width=True)
+        
+        # Show detailed view
+        selected_pred = st.selectbox("Select a prediction to view details:", 
+                                   range(len(predictions)), 
+                                   format_func=lambda x: f"Prediction {x+1} - {predictions[x]['timestamp'].strftime('%Y-%m-%d %H:%M')}")
+        
+        if selected_pred is not None:
+            pred = predictions[selected_pred]
+            with st.expander("Detailed View", expanded=True):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.subheader("Patient Details")
+                    st.write(f"**Age**: {pred['age']}")
+                    st.write(f"**Gender**: {pred['gender']}")
+                    st.write(f"**BMI**: {pred['bmi']:.1f}")
+                    st.write(f"**Pregnancy**: {pred['pregnancy']}")
+                    
+                with col2:
+                    st.subheader("Lifestyle Factors")
+                    st.write(f"**Smoking**: {pred['smoking']}")
+                    st.write(f"**Alcohol (ml/day)**: {pred['alcohol']}")
+                    st.write(f"**Physical Activity**: {pred['physical_activity']}")
+                    st.write(f"**Salt Intake (g)**: {pred['salt_intake']:.1f}")
+                
+                st.subheader("Clinical Factors")
+                col3, col4 = st.columns(2)
+                with col3:
+                    st.write(f"**Chronic Kidney Disease**: {'Yes' if pred['ckd'] else 'No'}")
+                    st.write(f"**Thyroid Disorders**: {'Yes' if pred['atd'] else 'No'}")
+                with col4:
+                    st.write(f"**Hemoglobin Level**: {pred['loh']:.1f} g/dl")
+                    st.write(f"**Inbreeding Coefficient**: {pred['gpc']:.2f}")
+                
+                st.subheader("Prediction Results")
+                fig, ax = plt.subplots(figsize=(6, 3))
+                ax.bar(['Low Risk', 'High Risk'], 
+                      [1 - pred['probability'], pred['probability']], 
+                      color=['#2ecc71', '#e74c3c'])
+                ax.set_ylim(0, 1)
+                ax.set_title('Risk Probability')
+                st.pyplot(fig)
+    else:
+        st.warning("No prediction history found")
+
+# Prediction page
+else:
     st.title("High Blood Pressure Risk Prediction Tool")
     st.write("""
     This tool predicts the risk of HBP based on patient characteristics.
@@ -202,6 +315,7 @@ with tab1:
                     prediction = model.predict(X_scaled)
                     proba = model.predict_proba(X_scaled)[0] if hasattr(model, "predict_proba") else [0.5, 0.5]
                     
+                    # Save to Firestore
                     if save_prediction_to_firestore(input_data, prediction, proba):
                         st.success("Prediction saved to database")
                     else:
@@ -305,113 +419,9 @@ with tab1:
             except Exception as e:
                 st.error(f"An error occurred during prediction: {e}")
 
-# History Tab
-with tab2:
-    st.title("Prediction History")
-    
-    with st.spinner('Loading prediction history...'):
-        predictions = get_all_predictions()
-    
-    if predictions:
-        st.write(f"Found {len(predictions)} historical predictions")
-        
-        history_df = pd.DataFrame([{
-            'Date': pred['timestamp'].strftime('%Y-%m-%d %H:%M'),
-            'Age': pred['age'],
-            'Gender': pred['gender'],
-            'Prediction': pred['prediction'],
-            'Probability': f"{pred['probability']:.1%}",
-            'Risk Factors': ', '.join([k.replace('_', ' ') for k, v in pred['risk_factors'].items() if v])
-        } for pred in predictions])
-        
-        st.dataframe(history_df, use_container_width=True)
-        
-        selected_pred = st.selectbox("Select a prediction to view details:", 
-                                   range(len(predictions)), 
-                                   format_func=lambda x: f"Prediction {x+1} - {predictions[x]['timestamp'].strftime('%Y-%m-%d %H:%M')}")
-        
-        if selected_pred is not None:
-            pred = predictions[selected_pred]
-            with st.expander("Detailed View", expanded=True):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.subheader("Patient Details")
-                    st.write(f"**Age**: {pred['age']}")
-                    st.write(f"**Gender**: {pred['gender']}")
-                    st.write(f"**BMI**: {pred['bmi']:.1f}")
-                    st.write(f"**Pregnancy**: {pred['pregnancy']}")
-                    
-                with col2:
-                    st.subheader("Lifestyle Factors")
-                    st.write(f"**Smoking**: {pred['smoking']}")
-                    st.write(f"**Alcohol (ml/day)**: {pred['alcohol']}")
-                    st.write(f"**Physical Activity**: {pred['physical_activity']}")
-                    st.write(f"**Salt Intake (g)**: {pred['salt_intake']:.1f}")
-                
-                st.subheader("Clinical Factors")
-                col3, col4 = st.columns(2)
-                with col3:
-                    st.write(f"**Chronic Kidney Disease**: {'Yes' if pred['ckd'] else 'No'}")
-                    st.write(f"**Thyroid Disorders**: {'Yes' if pred['atd'] else 'No'}")
-                with col4:
-                    st.write(f"**Hemoglobin Level**: {pred['loh']:.1f} g/dl")
-                    st.write(f"**Inbreeding Coefficient**: {pred['gpc']:.2f}")
-                
-                st.subheader("Prediction Results")
-                fig, ax = plt.subplots(figsize=(6, 3))
-                ax.bar(['Low Risk', 'High Risk'], 
-                      [1 - pred['probability'], pred['probability']], 
-                      color=['#2ecc71', '#e74c3c'])
-                ax.set_ylim(0, 1)
-                ax.set_title('Risk Probability')
-                st.pyplot(fig)
-    else:
-        st.warning("No prediction history found")
-
-# Ontology Tab
-with tab3:
-    st.title("Ontology For HBP Prediction System")
-    st.write("""
-    ### Key Concepts and Relationships
-    **Risk Factor Categories**:
-    - **Demographic**: Age, Gender, Pregnancy Status
-    - **Lifestyle**: Smoking, Alcohol Consumption, Physical Activity
-    - **Clinical**: Chronic Kidney Disease, Thyroid Disorders
-    - **Biochemical**: Hemoglobin Levels, Salt Intake
-    - **Genetic**: Inbreeding Coefficient
-    """)
-    try:
-        st.image("ontology2.png", caption="HBP Risk Factor Ontology Diagram", use_column_width=True)
-    except FileNotFoundError:
-        st.error("Ontology image not found. Please ensure 'ontology.PNG' is in the same directory.")
-    except Exception as e:
-        st.error(f"Error loading ontology image: {e}")
-        
-    try:
-        st.image("ontology.PNG", caption="Protege Ontology Diagram", use_column_width=True)
-    except FileNotFoundError:
-        st.error("Ontology image not found. Please ensure 'ontology.PNG' is in the same directory.")
-    except Exception as e:
-        st.error(f"Error loading ontology image: {e}")
-
-# About Tab
-with tab4:
-    st.title("About This Tool")
-    st.write("""
-    ### High Blood Pressure Risk Prediction Tool
-    **Version**: 1.0.0  
-    **Purpose**: Clinical decision support for Blood Pressure Abnormalities risk assessment  
-    **Methodology**:
-    - Machine learning model trained on 2,000+ patient records
-    - Validated with 85% accuracy
-    - Incorporates 13 key risk factors
-    - Data stored securely in Firebase Firestore
-    """)
-
 # Footer
 st.markdown("""
 <div class="custom-footer">
-    High Blood Pressure Risk Prediction System © 2023 | Clinical Decision Support Tool
+    High Blood Pressure Risk Prediction System © 2025 | Clinical Decision Support Tool
 </div>
 """, unsafe_allow_html=True)
