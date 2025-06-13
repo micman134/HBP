@@ -8,6 +8,9 @@ import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 from google.cloud.firestore_v1.base_query import FieldFilter
+import json
+from streamlit.components.v1 import html
+from firebase_admin import exceptions as firebase_exceptions
 
 # Set page config
 st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
@@ -54,70 +57,149 @@ def init_firebase():
         st.error(f"Firebase initialization error: {e}")
         return None
 
-# Authentication functions
-def sign_up(email, password, name):
-    try:
-        user = auth.create_user(
-            email=email,
-            password=password,
-            display_name=name
-        )
+# Firebase Client SDK Authentication
+def firebase_auth_script():
+    firebase_config = {
+        "apiKey": st.secrets["firebase"]["api_key"],
+        "authDomain": f"{st.secrets['firebase']['project_id']}.firebaseapp.com",
+        "projectId": st.secrets["firebase"]["project_id"],
+        "storageBucket": f"{st.secrets['firebase']['project_id']}.appspot.com",
+        "messagingSenderId": st.secrets["firebase"]["messaging_sender_id"],
+        "appId": st.secrets["firebase"]["app_id"]
+    }
+    
+    return f"""
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-auth-compat.js"></script>
+    <script>
+        const firebaseConfig = {json.dumps(firebase_config)};
+        const app = firebase.initializeApp(firebaseConfig);
+        const auth = app.auth();
         
-        # Create user document in Firestore
-        db = init_firebase()
-        if db:
-            db.collection('users').document(user.uid).set({
-                'email': email,
-                'name': name,
-                'created_at': datetime.datetime.now(datetime.timezone.utc),
-                'last_login': datetime.datetime.now(datetime.timezone.utc)
-            })
+        function signIn(email, password) {{
+            return auth.signInWithEmailAndPassword(email, password);
+        }}
         
-        st.session_state.user = {
-            'uid': user.uid,
-            'email': user.email,
-            'name': name
-        }
-        return True
-    except Exception as e:
-        st.error(f"Sign up error: {e}")
-        return False
+        function signUp(email, password, name) {{
+            return auth.createUserWithEmailAndPassword(email, password)
+                .then((userCredential) => {{
+                    return userCredential.user.updateProfile({{ displayName: name }});
+                }});
+        }}
+        
+        function signOut() {{
+            return auth.signOut();
+        }}
+        
+        function getCurrentUser() {{
+            return new Promise((resolve) => {{
+                const unsubscribe = auth.onAuthStateChanged(user => {{
+                    unsubscribe();
+                    resolve(user);
+                }});
+            }});
+        }}
+        
+        // Make functions available to Streamlit
+        window.firebaseAuth = {{ signIn, signUp, signOut, getCurrentUser }};
+    </script>
+    """
 
+# Initialize Firebase Client SDK
+html(firebase_auth_script())
+
+# Authentication functions using Firebase Client SDK
 def sign_in(email, password):
     try:
-        # Note: This is a simplified approach - in production, use Firebase Client SDK
-        db = init_firebase()
-        if not db:
-            return False
-            
-        # Verify user exists (simplified - in production, use proper auth)
-        users_ref = db.collection('users')
-        query = users_ref.where('email', '==', email).limit(1).get()
-        
-        if not query:
-            st.error("Invalid email or password")
-            return False
-            
-        user_doc = query[0]
-        st.session_state.user = {
-            'uid': user_doc.id,
-            'email': email,
-            'name': user_doc.get('name')
-        }
-        
-        # Update last login time
-        db.collection('users').document(user_doc.id).update({
-            'last_login': datetime.datetime.now(datetime.timezone.utc)
-        })
-        
+        js = f"""
+        window.firebaseAuth.signIn('{email}', '{password}')
+            .then(() => {{
+                window.parent.postMessage({{type: 'AUTH_SUCCESS'}}, '*');
+            }})
+            .catch(error => {{
+                window.parent.postMessage({{type: 'AUTH_ERROR', error: error.message}}, '*');
+            }});
+        """
+        html(js)
         return True
     except Exception as e:
         st.error(f"Sign in error: {e}")
         return False
 
+def sign_up(email, password, name):
+    try:
+        js = f"""
+        window.firebaseAuth.signUp('{email}', '{password}', '{name}')
+            .then(() => {{
+                window.parent.postMessage({{type: 'SIGNUP_SUCCESS'}}, '*');
+            }})
+            .catch(error => {{
+                window.parent.postMessage({{type: 'AUTH_ERROR', error: error.message}}, '*');
+            }});
+        """
+        html(js)
+        return True
+    except Exception as e:
+        st.error(f"Sign up error: {e}")
+        return False
+
 def sign_out():
-    st.session_state.pop('user', None)
-    st.rerun()
+    try:
+        js = """
+        window.firebaseAuth.signOut()
+            .then(() => {
+                window.parent.postMessage({type: 'SIGNOUT_SUCCESS'}, '*');
+            });
+        """
+        html(js)
+        return True
+    except Exception as e:
+        st.error(f"Sign out error: {e}")
+        return False
+
+def get_current_user():
+    try:
+        js = """
+        window.firebaseAuth.getCurrentUser()
+            .then(user => {
+                if (user) {
+                    window.parent.postMessage({
+                        type: 'CURRENT_USER',
+                        user: {
+                            uid: user.uid,
+                            email: user.email,
+                            name: user.displayName
+                        }
+                    }, '*');
+                } else {
+                    window.parent.postMessage({type: 'NO_USER'}, '*');
+                }
+            });
+        """
+        html(js)
+    except Exception as e:
+        st.error(f"Error getting current user: {e}")
+
+# Handle auth messages from JavaScript
+def handle_auth_messages():
+    auth_messages = st.session_state.get('auth_messages', [])
+    for message in auth_messages:
+        if message['type'] == 'AUTH_SUCCESS':
+            st.session_state.user_updated = True
+            st.rerun()
+        elif message['type'] == 'SIGNUP_SUCCESS':
+            st.success("Account created successfully! Please sign in.")
+            st.session_state.show_signup = False
+            st.session_state.show_login = True
+        elif message['type'] == 'AUTH_ERROR':
+            st.error(f"Authentication error: {message['error']}")
+        elif message['type'] == 'CURRENT_USER':
+            st.session_state.user = message['user']
+        elif message['type'] == 'NO_USER':
+            st.session_state.user = None
+    
+    if auth_messages:
+        st.session_state.auth_messages = []
 
 # Save prediction to Firestore with user association
 def save_prediction_to_firestore(input_data, prediction, proba):
@@ -206,6 +288,7 @@ def get_user_predictions(user_id):
     except Exception as e:
         st.error(f"Error fetching predictions: {str(e)[:200]}")  # Truncate long errors
         return None
+
 # Load model and scaler (cached)
 @st.cache_resource
 def load_model_and_scaler():
@@ -228,6 +311,78 @@ if 'show_login' not in st.session_state:
     st.session_state.show_login = False
 if 'show_signup' not in st.session_state:
     st.session_state.show_signup = False
+if 'auth_messages' not in st.session_state:
+    st.session_state.auth_messages = []
+if 'user_updated' not in st.session_state:
+    st.session_state.user_updated = False
+
+# JavaScript to handle auth state changes
+auth_state_js = """
+<script>
+    // Listen for auth state changes
+    window.firebaseAuth.getCurrentUser();
+    
+    // Listen for messages from the auth functions
+    window.addEventListener('message', (event) => {
+        if (event.data.type && event.data.type.startsWith('AUTH_')) {
+            window.parent.postMessage(event.data, '*');
+        }
+    });
+    
+    // Forward messages to Streamlit
+    window.addEventListener('message', (event) => {
+        if (event.data.type && event.data.type.startsWith('AUTH_')) {
+            const streamlitMsg = {
+                isStreamlitMessage: true,
+                type: 'AUTH_UPDATE',
+                data: event.data
+            };
+            window.parent.postMessage(streamlitMsg, '*');
+        }
+    });
+</script>
+"""
+
+html(auth_state_js)
+
+# Handle Streamlit messages
+def handle_streamlit_messages():
+    try:
+        messages = st.session_state.get('streamlit_messages', [])
+        for message in messages:
+            if message.get('type') == 'AUTH_UPDATE':
+                st.session_state.auth_messages.append(message['data'])
+        
+        if messages:
+            st.session_state.streamlit_messages = []
+            handle_auth_messages()
+            
+    except Exception as e:
+        st.error(f"Error handling messages: {e}")
+
+# JavaScript to receive messages from iframe
+receive_messages_js = """
+<script>
+    window.addEventListener('message', (event) => {
+        if (event.data.isStreamlitMessage) {
+            const msg = event.data;
+            if (msg.type === 'AUTH_UPDATE') {
+                window.parent.streamlitAPI.enqueueMessage(msg);
+            }
+        }
+    });
+</script>
+"""
+
+html(receive_messages_js)
+
+# Check authentication state on app load
+if not st.session_state.user_updated:
+    get_current_user()
+    st.session_state.user_updated = True
+
+handle_streamlit_messages()
+handle_auth_messages()
 
 # Sidebar authentication
 with st.sidebar:
@@ -239,6 +394,8 @@ with st.sidebar:
         
         if st.button("Sign Out"):
             sign_out()
+            st.session_state.user = None
+            st.rerun()
         
         st.title("Menu")
         page = st.radio("Navigation", ["Predict", "View History", "Ontology", "About"])
@@ -250,35 +407,6 @@ with st.sidebar:
         if st.button("Create Account"):
             st.session_state.show_signup = True
             st.session_state.show_login = False
-        
-    #     if st.session_state.show_login:
-    #         with st.form("sign_in_form"):
-    #             email = st.text_input("Email")
-    #             password = st.text_input("Password", type="password")
-    #             submitted = st.form_submit_button("Sign In")
-                
-    #             if submitted:
-    #                 if sign_in(email, password):
-    #                     st.session_state.show_login = False
-    #                     st.rerun()
-        
-        # if st.session_state.show_signup:
-        #     with st.form("sign_up_form"):
-        #         name = st.text_input("Full Name")
-        #         email = st.text_input("Email")
-        #         password = st.text_input("Password", type="password")
-        #         confirm_password = st.text_input("Confirm Password", type="password")
-        #         submitted = st.form_submit_button("Sign Up")
-                
-        #         if submitted:
-        #             if password != confirm_password:
-        #                 st.error("Passwords don't match")
-        #             elif len(password) < 6:
-        #                 st.error("Password must be at least 6 characters")
-        #             else:
-        #                 if sign_up(email, password, name):
-        #                     st.session_state.show_signup = False
-        #                     st.rerun()
 
 # Main App Content
 if st.session_state.user:
