@@ -4,8 +4,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import time
-# import warnings
-# warnings.filterwarnings("ignore", category=FutureWarning)
+import mysql.connector
+from mysql.connector import Error
+import datetime
 
 # Set page config
 st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
@@ -45,6 +46,69 @@ try:
 except Exception as e:
     st.error(f"Error loading model or scaler: {e}")
     st.stop()
+
+# Initialize database connection
+@st.cache_resource(ttl=600)
+def init_db_connection():
+    try:
+        connection = mysql.connector.connect(
+            host=st.secrets["db"]["host"],
+            port=st.secrets["db"]["port"],
+            user=st.secrets["db"]["user"],
+            password=st.secrets["db"]["password"],
+            database=st.secrets["db"]["name"]
+        )
+        return connection
+    except Error as e:
+        st.error(f"Error connecting to MySQL: {e}")
+        return None
+
+# Save prediction to database
+def save_prediction_to_db(input_data, prediction, proba):
+    connection = None
+    try:
+        connection = init_db_connection()
+        if connection and connection.is_connected():
+            cursor = connection.cursor()
+            
+            query = """
+            INSERT INTO predictions (
+                age, bmi, loh, gpc, physical_activity, salt_intake, 
+                alcohol, stress_level, ckd, atd, gender, 
+                pregnancy, smoking, prediction, probability, prediction_date
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            values = (
+                input_data['Age'],
+                input_data['BMI'],
+                input_data['LOH'],
+                input_data['GPC'],
+                input_data['PA'],
+                input_data['salt_CID'],
+                input_data['alcohol_CPD'],
+                input_data['LOS'],
+                input_data['CKD'],
+                input_data['ATD'],
+                'Female' if input_data['Sex'] == 1 else 'Male',
+                'Yes' if input_data['Pregnancy'] == 1 else 'No',
+                'Yes' if input_data['Smoking'] == 1 else 'No',
+                'High Risk' if prediction[0] == 1 else 'Low Risk',
+                float(proba[1]),
+                datetime.datetime.now()
+            )
+            
+            cursor.execute(query, values)
+            connection.commit()
+            return True
+            
+    except Error as e:
+        st.error(f"Database error: {e}")
+        return False
+    finally:
+        if connection and connection.is_connected():
+            cursor.close()
+            connection.close()
 
 # Ontology page
 if page == "Ontology":
@@ -146,8 +210,6 @@ else:
                         'ATD': 1 if atd == "Yes" else 0
                     }
 
-                    #features = ['loh', 'gpc', 'age', 'bmi', 'gender', 'pregnancy', 'smoking',
-                                #'pa', 'scid', 'alcohol', 'los', 'ckd', 'atd']
                     features = ['LOH', 'GPC', 'Age', 'BMI', 'Sex', 'Pregnancy', 'Smoking',
                                 'PA', 'salt_CID', 'alcohol_CPD', 'LOS', 'CKD', 'ATD']
                     X = pd.DataFrame([[input_data[feature] for feature in features]], columns=features)
@@ -155,6 +217,12 @@ else:
                     X_scaled = scaler.transform(X)
                     prediction = model.predict(X_scaled)
                     proba = model.predict_proba(X_scaled)[0] if hasattr(model, "predict_proba") else [0.5, 0.5]
+                    
+                    # Save to database
+                    if save_prediction_to_db(input_data, prediction, proba):
+                        st.success("Prediction saved to database")
+                    else:
+                        st.warning("Prediction completed but not saved to database")
 
                 st.divider()
                 col1, col2 = st.columns([1, 1.5])
@@ -253,3 +321,10 @@ else:
 
             except Exception as e:
                 st.error(f"An error occurred during prediction: {e}")
+
+# Footer
+st.markdown("""
+<div class="custom-footer">
+    High Blood Pressure Risk Prediction System © 2023 | Clinical Decision Support Tool
+</div>
+""", unsafe_allow_html=True)
