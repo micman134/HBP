@@ -168,24 +168,44 @@ def get_user_predictions(user_id):
     try:
         db = init_firebase()
         if not db:
+            st.warning("Database connection failed")
             return None
             
         predictions_ref = db.collection('hbp_predictions')
-        docs = predictions_ref.where('user_id', '==', user_id)\
-                             .order_by('timestamp', direction=firestore.Query.DESCENDING)\
-                             .stream()
+        
+        try:
+            # Try the optimized query first
+            docs = predictions_ref.where('user_id', '==', user_id)\
+                                 .order_by('timestamp', direction=firestore.Query.DESCENDING)\
+                                 .stream()
+        except Exception as e:
+            if "index" in str(e).lower():
+                # If index isn't ready, use client-side sorting
+                st.warning("Index not ready yet - using basic query (may be slower)")
+                all_docs = predictions_ref.where('user_id', '==', user_id).stream()
+                docs = sorted(
+                    all_docs, 
+                    key=lambda doc: doc.to_dict().get('timestamp'), 
+                    reverse=True
+                )
+            else:
+                raise e
         
         predictions = []
         for doc in docs:
-            pred_data = doc.to_dict()
-            pred_data['id'] = doc.id
-            predictions.append(pred_data)
-            
-        return predictions
+            try:
+                pred_data = doc.to_dict()
+                pred_data['id'] = doc.id
+                predictions.append(pred_data)
+            except Exception as e:
+                st.warning(f"Skipping corrupt document: {e}")
+                continue
+                
+        return predictions if predictions else None
+        
     except Exception as e:
-        st.error(f"Error fetching predictions: {e}")
+        st.error(f"Error fetching predictions: {str(e)[:200]}")  # Truncate long errors
         return None
-
 # Load model and scaler (cached)
 @st.cache_resource
 def load_model_and_scaler():
