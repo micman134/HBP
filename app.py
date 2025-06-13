@@ -242,14 +242,14 @@ with st.sidebar:
         
         st.title("Menu")
         page = st.radio("Navigation", ["Predict", "View History", "Ontology", "About"])
-    # else:
-    #     if st.button("Sign In"):
-    #         st.session_state.show_login = True
-    #         st.session_state.show_signup = False
+    else:
+        if st.button("Sign In"):
+            st.session_state.show_login = True
+            st.session_state.show_signup = False
         
-    #     if st.button("Create Account"):
-    #         st.session_state.show_signup = True
-    #         st.session_state.show_login = False
+        if st.button("Create Account"):
+            st.session_state.show_signup = True
+            st.session_state.show_login = False
         
     #     if st.session_state.show_login:
     #         with st.form("sign_in_form"):
