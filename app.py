@@ -298,6 +298,8 @@ with st.sidebar:
         st.title("Menu")
         page = st.radio("Navigation", ["Predict", "View History", "Ontology", "About"])
     else:
+            st.session_state.show_login = True
+            st.session_state.show_signup = False
         if st.button("Sign In"):
             st.session_state.show_login = True
             st.session_state.show_signup = False
