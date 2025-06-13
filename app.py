@@ -129,23 +129,25 @@ else:
                     time.sleep(1)
 
                     input_data = {
-                        'loh': loh,
-                        'gpc': gpc,
-                        'age': age,
-                        'bmi': bmi,
-                        'gender': 1 if gender == "Female" else 0,
-                        'pregnancy': 1 if pregnancy == "Yes" else 0,
-                        'smoking': 1 if smoking == "Yes" else 0,
-                        'pa': pa,
-                        'scid': scid,
-                        'alcohol': alcohol,
-                        'los': ["Acute/normal stress", "Episodic acute stress", "Chronic Stress"].index(los) + 1,
-                        'ckd': 1 if ckd == "Yes" else 0,
-                        'atd': 1 if atd == "Yes" else 0
+                        'LOH': loh,
+                        'GPC': gpc,
+                        'Age': age,
+                        'BMI': bmi,
+                        'Sex': 1 if gender == "Female" else 0,
+                        'Pregnancy': 1 if pregnancy == "Yes" else 0,
+                        'Smoking': 1 if smoking == "Yes" else 0,
+                        'PA': pa,
+                        'salt_CID': scid,
+                        'alcohol_CPD': alcohol,
+                        'LOS': ["Acute/normal stress", "Episodic acute stress", "Chronic Stress"].index(los) + 1,
+                        'CKD': 1 if ckd == "Yes" else 0,
+                        'ATD': 1 if atd == "Yes" else 0
                     }
 
-                    features = ['loh', 'gpc', 'age', 'bmi', 'gender', 'pregnancy', 'smoking',
-                                'pa', 'scid', 'alcohol', 'los', 'ckd', 'atd']
+                    #features = ['loh', 'gpc', 'age', 'bmi', 'gender', 'pregnancy', 'smoking',
+                                #'pa', 'scid', 'alcohol', 'los', 'ckd', 'atd']
+                    features = ['LOH', 'GPC', 'Age', 'BMI', 'Sex', 'Pregnancy', 'Smoking',
+                                'PA', 'salt_CID', 'alcohol_CPD', 'LOS', 'CKD', 'ATD']
                     X = pd.DataFrame([[input_data[feature] for feature in features]], columns=features)
 
                     X_scaled = scaler.transform(X)
