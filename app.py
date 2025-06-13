@@ -4,9 +4,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import time
-import mysql.connector
-from mysql.connector import Error
 import datetime
+import firebase_admin
+from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 # Set page config
 st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
@@ -29,10 +30,102 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Initialize Firebase (cached to prevent multiple initializations)
+@st.cache_resource
+def init_firebase():
+    try:
+        # Check if Firebase app is already initialized
+        if not firebase_admin._apps:
+            # Load credentials from secrets
+            firebase_creds = {
+                "type": st.secrets["firebase"]["type"],
+                "project_id": st.secrets["firebase"]["project_id"],
+                "private_key_id": st.secrets["firebase"]["private_key_id"],
+                "private_key": st.secrets["firebase"]["private_key"].replace('\\n', '\n'),
+                "client_email": st.secrets["firebase"]["client_email"],
+                "client_id": st.secrets["firebase"]["client_id"],
+                "auth_uri": st.secrets["firebase"]["auth_uri"],
+                "token_uri": st.secrets["firebase"]["token_uri"],
+                "auth_provider_x509_cert_url": st.secrets["firebase"]["auth_provider_x509_cert_url"],
+                "client_x509_cert_url": st.secrets["firebase"]["client_x509_cert_url"]
+            }
+            
+            cred = credentials.Certificate(firebase_creds)
+            firebase_admin.initialize_app(cred)
+        return firestore.client()
+    except Exception as e:
+        st.error(f"Firebase initialization error: {e}")
+        return None
+
+# Save prediction to Firestore
+def save_prediction_to_firestore(input_data, prediction, proba):
+    try:
+        db = init_firebase()
+        if not db:
+            return False
+            
+        predictions_ref = db.collection('hbp_predictions')
+        
+        prediction_data = {
+            'age': input_data['Age'],
+            'bmi': input_data['BMI'],
+            'loh': input_data['LOH'],
+            'gpc': input_data['GPC'],
+            'physical_activity': input_data['PA'],
+            'salt_intake': input_data['salt_CID'],
+            'alcohol': input_data['alcohol_CPD'],
+            'stress_level': input_data['LOS'],
+            'ckd': input_data['CKD'],
+            'atd': input_data['ATD'],
+            'gender': 'Female' if input_data['Sex'] == 1 else 'Male',
+            'pregnancy': 'Yes' if input_data['Pregnancy'] == 1 else 'No',
+            'smoking': 'Yes' if input_data['Smoking'] == 1 else 'No',
+            'prediction': 'High Risk' if prediction[0] == 1 else 'Low Risk',
+            'probability': float(proba[1]),
+            'timestamp': datetime.datetime.now(datetime.timezone.utc),
+            'risk_factors': {
+                'age_gt_50': input_data['Age'] > 50,
+                'bmi_gt_30': input_data['BMI'] >= 30,
+                'high_salt': input_data['salt_CID'] > 2325,
+                'chronic_stress': input_data['LOS'] == 3,
+                'smoker': input_data['Smoking'] == 1,
+                'heavy_drinker': input_data['alcohol_CPD'] > 355
+            }
+        }
+        
+        # Add a new document with auto-generated ID
+        doc_ref = predictions_ref.add(prediction_data)
+        return True
+        
+    except Exception as e:
+        st.error(f"Firestore save error: {e}")
+        return False
+
+# Get all predictions from Firestore
+def get_all_predictions():
+    try:
+        db = init_firebase()
+        if not db:
+            return None
+            
+        predictions_ref = db.collection('hbp_predictions')
+        docs = predictions_ref.order_by('timestamp', direction=firestore.Query.DESCENDING).stream()
+        
+        predictions = []
+        for doc in docs:
+            pred_data = doc.to_dict()
+            pred_data['id'] = doc.id
+            predictions.append(pred_data)
+            
+        return predictions
+    except Exception as e:
+        st.error(f"Error fetching predictions: {e}")
+        return None
+
 # Sidebar navigation
 with st.sidebar:
     st.title("Menu")
-    page = st.radio("Go to", ["Predict", "Ontology", "About"])
+    page = st.radio("Go to", ["Predict", "View History", "Ontology", "About"])
 
 # Load model and scaler (cached)
 @st.cache_resource
@@ -46,69 +139,6 @@ try:
 except Exception as e:
     st.error(f"Error loading model or scaler: {e}")
     st.stop()
-
-# Initialize database connection
-@st.cache_resource(ttl=600)
-def init_db_connection():
-    try:
-        connection = mysql.connector.connect(
-            host=st.secrets["db"]["host"],
-            port=st.secrets["db"]["port"],
-            user=st.secrets["db"]["user"],
-            password=st.secrets["db"]["password"],
-            database=st.secrets["db"]["name"]
-        )
-        return connection
-    except Error as e:
-        st.error(f"Error connecting to MySQL: {e}")
-        return None
-
-# Save prediction to database
-def save_prediction_to_db(input_data, prediction, proba):
-    connection = None
-    try:
-        connection = init_db_connection()
-        if connection and connection.is_connected():
-            cursor = connection.cursor()
-            
-            query = """
-            INSERT INTO predictions (
-                age, bmi, loh, gpc, physical_activity, salt_intake, 
-                alcohol, stress_level, ckd, atd, gender, 
-                pregnancy, smoking, prediction, probability, prediction_date
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """
-            
-            values = (
-                input_data['Age'],
-                input_data['BMI'],
-                input_data['LOH'],
-                input_data['GPC'],
-                input_data['PA'],
-                input_data['salt_CID'],
-                input_data['alcohol_CPD'],
-                input_data['LOS'],
-                input_data['CKD'],
-                input_data['ATD'],
-                'Female' if input_data['Sex'] == 1 else 'Male',
-                'Yes' if input_data['Pregnancy'] == 1 else 'No',
-                'Yes' if input_data['Smoking'] == 1 else 'No',
-                'High Risk' if prediction[0] == 1 else 'Low Risk',
-                float(proba[1]),
-                datetime.datetime.now()
-            )
-            
-            cursor.execute(query, values)
-            connection.commit()
-            return True
-            
-    except Error as e:
-        st.error(f"Database error: {e}")
-        return False
-    finally:
-        if connection and connection.is_connected():
-            cursor.close()
-            connection.close()
 
 # Ontology page
 if page == "Ontology":
@@ -147,7 +177,74 @@ elif page == "About":
     - Machine learning model trained on 2,000+ patient records
     - Validated with 85% accuracy
     - Incorporates 13 key risk factors
+    - Data stored securely in Firebase Firestore
     """)
+
+# View History page
+elif page == "View History":
+    st.title("Prediction History")
+    
+    with st.spinner('Loading prediction history...'):
+        predictions = get_all_predictions()
+    
+    if predictions:
+        st.write(f"Found {len(predictions)} historical predictions")
+        
+        # Convert to DataFrame for display
+        history_df = pd.DataFrame([{
+            'Date': pred['timestamp'].strftime('%Y-%m-%d %H:%M'),
+            'Age': pred['age'],
+            'Gender': pred['gender'],
+            'Prediction': pred['prediction'],
+            'Probability': f"{pred['probability']:.1%}",
+            'Risk Factors': ', '.join([k.replace('_', ' ') for k, v in pred['risk_factors'].items() if v])
+        } for pred in predictions])
+        
+        st.dataframe(history_df, use_container_width=True)
+        
+        # Show detailed view
+        selected_pred = st.selectbox("Select a prediction to view details:", 
+                                   range(len(predictions)), 
+                                   format_func=lambda x: f"Prediction {x+1} - {predictions[x]['timestamp'].strftime('%Y-%m-%d %H:%M')}")
+        
+        if selected_pred is not None:
+            pred = predictions[selected_pred]
+            with st.expander("Detailed View", expanded=True):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.subheader("Patient Details")
+                    st.write(f"**Age**: {pred['age']}")
+                    st.write(f"**Gender**: {pred['gender']}")
+                    st.write(f"**BMI**: {pred['bmi']:.1f}")
+                    st.write(f"**Pregnancy**: {pred['pregnancy']}")
+                    
+                with col2:
+                    st.subheader("Lifestyle Factors")
+                    st.write(f"**Smoking**: {pred['smoking']}")
+                    st.write(f"**Alcohol (ml/day)**: {pred['alcohol']}")
+                    st.write(f"**Physical Activity**: {pred['physical_activity']}")
+                    st.write(f"**Salt Intake (g)**: {pred['salt_intake']:.1f}")
+                
+                st.subheader("Clinical Factors")
+                col3, col4 = st.columns(2)
+                with col3:
+                    st.write(f"**Chronic Kidney Disease**: {'Yes' if pred['ckd'] else 'No'}")
+                    st.write(f"**Thyroid Disorders**: {'Yes' if pred['atd'] else 'No'}")
+                with col4:
+                    st.write(f"**Hemoglobin Level**: {pred['loh']:.1f} g/dl")
+                    st.write(f"**Inbreeding Coefficient**: {pred['gpc']:.2f}")
+                
+                st.subheader("Prediction Results")
+                fig, ax = plt.subplots(figsize=(6, 3))
+                ax.bar(['Low Risk', 'High Risk'], 
+                      [1 - pred['probability'], pred['probability']], 
+                      color=['#2ecc71', '#e74c3c'])
+                ax.set_ylim(0, 1)
+                ax.set_title('Risk Probability')
+                st.pyplot(fig)
+    else:
+        st.warning("No prediction history found")
 
 # Prediction page
 else:
@@ -218,8 +315,8 @@ else:
                     prediction = model.predict(X_scaled)
                     proba = model.predict_proba(X_scaled)[0] if hasattr(model, "predict_proba") else [0.5, 0.5]
                     
-                    # Save to database
-                    if save_prediction_to_db(input_data, prediction, proba):
+                    # Save to Firestore
+                    if save_prediction_to_firestore(input_data, prediction, proba):
                         st.success("Prediction saved to database")
                     else:
                         st.warning("Prediction completed but not saved to database")
