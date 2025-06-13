@@ -85,13 +85,12 @@ def sign_up(email, password, name):
 
 def sign_in(email, password):
     try:
-        # Note: Firebase Admin SDK doesn't support client-side sign in directly
-        # This is a simplified approach - in production, use Firebase Client SDK
+        # Note: This is a simplified approach - in production, use Firebase Client SDK
         db = init_firebase()
         if not db:
             return False
             
-        # Verify user exists and password is correct (simplified)
+        # Verify user exists (simplified - in production, use proper auth)
         users_ref = db.collection('users')
         query = users_ref.where('email', '==', email).limit(1).get()
         
@@ -99,8 +98,6 @@ def sign_in(email, password):
             st.error("Invalid email or password")
             return False
             
-        # In a real app, you would use Firebase Client SDK for actual authentication
-        # This is just for demonstration
         user_doc = query[0]
         st.session_state.user = {
             'uid': user_doc.id,
@@ -120,6 +117,7 @@ def sign_in(email, password):
 
 def sign_out():
     st.session_state.pop('user', None)
+    st.rerun()
 
 # Save prediction to Firestore with user association
 def save_prediction_to_firestore(input_data, prediction, proba):
@@ -206,54 +204,64 @@ if 'user' not in st.session_state:
     st.session_state.user = None
 if 'submitted' not in st.session_state:
     st.session_state.submitted = False
+if 'show_login' not in st.session_state:
+    st.session_state.show_login = False
+if 'show_signup' not in st.session_state:
+    st.session_state.show_signup = False
 
-# Authentication UI
-def show_auth_ui():
-    auth_tab, signup_tab = st.tabs(["Sign In", "Sign Up"])
+# Sidebar authentication
+with st.sidebar:
+    st.title("Account")
     
-    with auth_tab:
-        with st.form("sign_in_form"):
-            email = st.text_input("Email", key="signin_email")
-            password = st.text_input("Password", type="password", key="signin_password")
-            submitted = st.form_submit_button("Sign In")
-            
-            if submitted:
-                if sign_in(email, password):
-                    st.success("Signed in successfully!")
-                    st.rerun()
-    
-    with signup_tab:
-        with st.form("sign_up_form"):
-            name = st.text_input("Full Name", key="signup_name")
-            email = st.text_input("Email", key="signup_email")
-            password = st.text_input("Password", type="password", key="signup_password")
-            confirm_password = st.text_input("Confirm Password", type="password", key="signup_confirm_password")
-            submitted = st.form_submit_button("Sign Up")
-            
-            if submitted:
-                if password != confirm_password:
-                    st.error("Passwords don't match")
-                elif len(password) < 6:
-                    st.error("Password must be at least 6 characters")
-                else:
-                    if sign_up(email, password, name):
-                        st.success("Account created successfully! Please sign in.")
-                        st.rerun()
-
-# Main App UI
-def show_main_app():
-    # Sidebar navigation and user info
-    with st.sidebar:
-        if st.session_state.user:
-            st.markdown(f"### Welcome, {st.session_state.user['name']}!")
-            st.markdown(f"Email: {st.session_state.user['email']}")
-            if st.button("Sign Out"):
-                sign_out()
-                st.rerun()
+    if st.session_state.user:
+        st.markdown(f"Welcome, **{st.session_state.user['name']}**!")
+        st.markdown(f"Email: {st.session_state.user['email']}")
+        
+        if st.button("Sign Out"):
+            sign_out()
         
         st.title("Menu")
-        page = st.radio("Go to", ["Predict", "View History", "Ontology", "About"])
+        page = st.radio("Navigation", ["Predict", "View History", "Ontology", "About"])
+    else:
+        if st.button("Sign In"):
+            st.session_state.show_login = True
+            st.session_state.show_signup = False
+        
+        if st.button("Create Account"):
+            st.session_state.show_signup = True
+            st.session_state.show_login = False
+        
+        if st.session_state.show_login:
+            with st.form("sign_in_form"):
+                email = st.text_input("Email")
+                password = st.text_input("Password", type="password")
+                submitted = st.form_submit_button("Sign In")
+                
+                if submitted:
+                    if sign_in(email, password):
+                        st.session_state.show_login = False
+                        st.rerun()
+        
+        if st.session_state.show_signup:
+            with st.form("sign_up_form"):
+                name = st.text_input("Full Name")
+                email = st.text_input("Email")
+                password = st.text_input("Password", type="password")
+                confirm_password = st.text_input("Confirm Password", type="password")
+                submitted = st.form_submit_button("Sign Up")
+                
+                if submitted:
+                    if password != confirm_password:
+                        st.error("Passwords don't match")
+                    elif len(password) < 6:
+                        st.error("Password must be at least 6 characters")
+                    else:
+                        if sign_up(email, password, name):
+                            st.session_state.show_signup = False
+                            st.rerun()
 
+# Main App Content
+if st.session_state.user:
     # Ontology page
     if page == "Ontology":
         st.title("Ontology For HBP Prediction System")
@@ -298,10 +306,6 @@ def show_main_app():
     elif page == "View History":
         st.title("Prediction History")
         
-        if 'user' not in st.session_state:
-            st.warning("Please sign in to view your prediction history")
-            return
-            
         with st.spinner('Loading your prediction history...'):
             predictions = get_user_predictions(st.session_state.user['uid'])
         
@@ -428,14 +432,10 @@ def show_main_app():
                         prediction = model.predict(X_scaled)
                         proba = model.predict_proba(X_scaled)[0] if hasattr(model, "predict_proba") else [0.5, 0.5]
                         
-                        # Save to Firestore if user is signed in
-                        if 'user' in st.session_state:
-                            if save_prediction_to_firestore(input_data, prediction, proba):
-                                st.success("Prediction saved to your history")
-                            else:
-                                st.warning("Prediction completed but not saved to history")
+                        if save_prediction_to_firestore(input_data, prediction, proba):
+                            st.success("Prediction saved to your history")
                         else:
-                            st.warning("Sign in to save your prediction history")
+                            st.warning("Prediction completed but not saved to history")
 
                     st.divider()
                     col1, col2 = st.columns([1, 1.5])
@@ -535,11 +535,38 @@ def show_main_app():
                 except Exception as e:
                     st.error(f"An error occurred during prediction: {e}")
 
-# App flow control
-if st.session_state.user:
-    show_main_app()
 else:
-    show_auth_ui()
+    st.title("High Blood Pressure Risk Prediction System")
+    st.warning("Please sign in or create an account to use the prediction tool")
+    
+    if st.session_state.show_login:
+        with st.expander("Sign In", expanded=True):
+            with st.form("main_sign_in_form"):
+                email = st.text_input("Email")
+                password = st.text_input("Password", type="password")
+                submitted = st.form_submit_button("Sign In")
+                
+                if submitted:
+                    if sign_in(email, password):
+                        st.rerun()
+    
+    if st.session_state.show_signup:
+        with st.expander("Create Account", expanded=True):
+            with st.form("main_sign_up_form"):
+                name = st.text_input("Full Name")
+                email = st.text_input("Email")
+                password = st.text_input("Password", type="password")
+                confirm_password = st.text_input("Confirm Password", type="password")
+                submitted = st.form_submit_button("Sign Up")
+                
+                if submitted:
+                    if password != confirm_password:
+                        st.error("Passwords don't match")
+                    elif len(password) < 6:
+                        st.error("Password must be at least 6 characters")
+                    else:
+                        if sign_up(email, password, name):
+                            st.rerun()
 
 # Footer
 st.markdown("""
