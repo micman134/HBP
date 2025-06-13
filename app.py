@@ -262,23 +262,23 @@ with st.sidebar:
     #                     st.session_state.show_login = False
     #                     st.rerun()
         
-        if st.session_state.show_signup:
-            with st.form("sign_up_form"):
-                name = st.text_input("Full Name")
-                email = st.text_input("Email")
-                password = st.text_input("Password", type="password")
-                confirm_password = st.text_input("Confirm Password", type="password")
-                submitted = st.form_submit_button("Sign Up")
+        # if st.session_state.show_signup:
+        #     with st.form("sign_up_form"):
+        #         name = st.text_input("Full Name")
+        #         email = st.text_input("Email")
+        #         password = st.text_input("Password", type="password")
+        #         confirm_password = st.text_input("Confirm Password", type="password")
+        #         submitted = st.form_submit_button("Sign Up")
                 
-                if submitted:
-                    if password != confirm_password:
-                        st.error("Passwords don't match")
-                    elif len(password) < 6:
-                        st.error("Password must be at least 6 characters")
-                    else:
-                        if sign_up(email, password, name):
-                            st.session_state.show_signup = False
-                            st.rerun()
+        #         if submitted:
+        #             if password != confirm_password:
+        #                 st.error("Passwords don't match")
+        #             elif len(password) < 6:
+        #                 st.error("Password must be at least 6 characters")
+        #             else:
+        #                 if sign_up(email, password, name):
+        #                     st.session_state.show_signup = False
+        #                     st.rerun()
 
 # Main App Content
 if st.session_state.user:
