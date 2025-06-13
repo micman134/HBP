@@ -8,6 +8,8 @@ import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 from google.cloud.firestore_v1.base_query import FieldFilter
+import hashlib
+import secrets
 
 # Set page config
 st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
@@ -54,68 +56,120 @@ def init_firebase():
         st.error(f"Firebase initialization error: {e}")
         return None
 
-# Authentication functions
-def sign_up(email, password, name):
-    try:
-        user = auth.create_user(
-            email=email,
-            password=password,
-            display_name=name
-        )
-        
-        # Create user document in Firestore
-        db = init_firebase()
-        if db:
-            db.collection('users').document(user.uid).set({
-                'email': email,
-                'name': name,
-                'created_at': datetime.datetime.now(datetime.timezone.utc),
-                'last_login': datetime.datetime.now(datetime.timezone.utc)
-            })
-        
-        st.session_state.user = {
-            'uid': user.uid,
-            'email': user.email,
-            'name': name
-        }
-        return True
-    except Exception as e:
-        st.error(f"Sign up error: {e}")
-        return False
+# Security functions
+def generate_salt():
+    return secrets.token_hex(16)
 
-def sign_in(email, password):
+def hash_password(password, salt):
+    """Hash password with salt using SHA-256"""
+    return hashlib.sha256((password + salt).encode()).hexdigest()
+
+# User management functions
+def create_user(email, password, name):
+    """Create a new user in Firestore with hashed password"""
     try:
-        # Note: This is a simplified approach - in production, use Firebase Client SDK
         db = init_firebase()
         if not db:
-            return False
+            return None
             
-        # Verify user exists (simplified - in production, use proper auth)
+        # Check if user already exists
+        users_ref = db.collection('users')
+        query = users_ref.where('email', '==', email).limit(1).get()
+        
+        if query:
+            st.error("Email already exists")
+            return None
+            
+        # Generate salt and hash password
+        salt = generate_salt()
+        hashed_pw = hash_password(password, salt)
+        
+        # Create user document
+        user_data = {
+            'email': email,
+            'name': name,
+            'password_hash': hashed_pw,
+            'salt': salt,
+            'created_at': datetime.datetime.now(datetime.timezone.utc),
+            'last_login': datetime.datetime.now(datetime.timezone.utc),
+            'role': 'user',
+            'active': True
+        }
+        
+        # Add user to Firestore
+        doc_ref = db.collection('users').add(user_data)
+        
+        # Also create auth user for Firebase Auth
+        try:
+            auth_user = auth.create_user(
+                email=email,
+                password=password,
+                display_name=name,
+                uid=doc_ref[1].id  # Use the Firestore document ID as UID
+            )
+        except Exception as auth_error:
+            # Rollback Firestore creation if auth fails
+            db.collection('users').document(doc_ref[1].id).delete()
+            st.error(f"Auth creation failed: {auth_error}")
+            return None
+            
+        return {
+            'uid': doc_ref[1].id,
+            'email': email,
+            'name': name,
+            'role': 'user'
+        }
+        
+    except Exception as e:
+        st.error(f"User creation error: {e}")
+        return None
+
+def authenticate_user(email, password):
+    """Authenticate user against Firestore credentials"""
+    try:
+        db = init_firebase()
+        if not db:
+            return None
+            
         users_ref = db.collection('users')
         query = users_ref.where('email', '==', email).limit(1).get()
         
         if not query:
             st.error("Invalid email or password")
-            return False
+            return None
             
         user_doc = query[0]
-        st.session_state.user = {
-            'uid': user_doc.id,
-            'email': email,
-            'name': user_doc.get('name')
-        }
+        user_data = user_doc.to_dict()
         
+        # Verify password
+        hashed_pw = hash_password(password, user_data['salt'])
+        if hashed_pw != user_data['password_hash']:
+            st.error("Invalid email or password")
+            return None
+            
+        # Check if account is active
+        if not user_data.get('active', True):
+            st.error("Account is disabled")
+            return None
+            
         # Update last login time
         db.collection('users').document(user_doc.id).update({
             'last_login': datetime.datetime.now(datetime.timezone.utc)
         })
         
-        return True
+        return {
+            'uid': user_doc.id,
+            'email': email,
+            'name': user_data['name'],
+            'role': user_data.get('role', 'user')
+        }
+        
     except Exception as e:
-        st.error(f"Sign in error: {e}")
-        return False
+        st.error(f"Authentication error: {e}")
+        return None
 
 def sign_out():
+    """Clear user session"""
     st.session_state.pop('user', None)
     st.rerun()
 
@@ -206,6 +260,7 @@ def get_user_predictions(user_id):
     except Exception as e:
         st.error(f"Error fetching predictions: {str(e)[:200]}")  # Truncate long errors
         return None
+
 # Load model and scaler (cached)
 @st.cache_resource
 def load_model_and_scaler():
@@ -250,35 +305,6 @@ with st.sidebar:
         if st.button("Create Account"):
             st.session_state.show_signup = True
             st.session_state.show_login = False
-        
-    #     if st.session_state.show_login:
-    #         with st.form("sign_in_form"):
-    #             email = st.text_input("Email")
-    #             password = st.text_input("Password", type="password")
-    #             submitted = st.form_submit_button("Sign In")
-                
-    #             if submitted:
-    #                 if sign_in(email, password):
-    #                     st.session_state.show_login = False
-    #                     st.rerun()
-        
-        # if st.session_state.show_signup:
-        #     with st.form("sign_up_form"):
-        #         name = st.text_input("Full Name")
-        #         email = st.text_input("Email")
-        #         password = st.text_input("Password", type="password")
-        #         confirm_password = st.text_input("Confirm Password", type="password")
-        #         submitted = st.form_submit_button("Sign Up")
-                
-        #         if submitted:
-        #             if password != confirm_password:
-        #                 st.error("Passwords don't match")
-        #             elif len(password) < 6:
-        #                 st.error("Password must be at least 6 characters")
-        #             else:
-        #                 if sign_up(email, password, name):
-        #                     st.session_state.show_signup = False
-        #                     st.rerun()
 
 # Main App Content
 if st.session_state.user:
@@ -567,7 +593,10 @@ else:
                 submitted = st.form_submit_button("Sign In")
                 
                 if submitted:
-                    if sign_in(email, password):
+                    user = authenticate_user(email, password)
+                    if user:
+                        st.session_state.user = user
+                        st.session_state.show_login = False
                         st.rerun()
     
     if st.session_state.show_signup:
@@ -585,7 +614,10 @@ else:
                     elif len(password) < 6:
                         st.error("Password must be at least 6 characters")
                     else:
-                        if sign_up(email, password, name):
+                        user = create_user(email, password, name)
+                        if user:
+                            st.session_state.user = user
+                            st.session_state.show_signup = False
                             st.rerun()
 
 # Footer
