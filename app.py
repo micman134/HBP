@@ -76,35 +76,40 @@ def firebase_auth_script():
         const app = firebase.initializeApp(firebaseConfig);
         const auth = app.auth();
         
-        function signIn(email, password) {{
-            return auth.signInWithEmailAndPassword(email, password);
-        }}
-        
-        function signUp(email, password, name) {{
-            return auth.createUserWithEmailAndPassword(email, password)
-                .then((userCredential) => {{
-                    return userCredential.user.updateProfile({{ displayName: name }});
-                }});
-        }}
-        
-        function signOut() {{
-            return auth.signOut();
-        }}
-        
+        // Modified for Streamlit Cloud compatibility
         function getCurrentUser() {{
             return new Promise((resolve) => {{
                 const unsubscribe = auth.onAuthStateChanged(user => {{
                     unsubscribe();
-                    resolve(user);
+                    if (user) {{
+                        const userData = {{
+                            uid: user.uid,
+                            email: user.email,
+                            name: user.displayName || user.email.split('@')[0]
+                        }};
+                        window.parent.postMessage({{
+                            isStreamlitMessage: true,
+                            type: 'firebase_auth',
+                            data: userData
+                        }}, '*');
+                    }} else {{
+                        window.parent.postMessage({{
+                            isStreamlitMessage: true,
+                            type: 'firebase_auth',
+                            data: null
+                        }}, '*');
+                    }}
                 }});
             }});
         }}
         
-        // Make functions available to Streamlit
-        window.firebaseAuth = {{ signIn, signUp, signOut, getCurrentUser }};
+        // Initialize auth state listener
+        getCurrentUser();
+        
+        // Make functions available globally
+        window.firebaseAuth = {{ getCurrentUser }};
     </script>
     """
-
 # Initialize Firebase Client SDK
 html(firebase_auth_script())
 
