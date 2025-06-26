@@ -323,14 +323,14 @@ if st.session_state.user:
         - **Genetic**: Inbreeding Coefficient
         """)
         try:
-            st.image("ontology2.png", caption="HBP Risk Factor Ontology Diagram", use_column_width=True)
+            st.image("ontology.png", caption="HBP Risk Factor Ontology Diagram", use_container_width=True)
         except FileNotFoundError:
             st.error("Ontology image not found. Please ensure 'ontology.PNG' is in the same directory.")
         except Exception as e:
             st.error(f"Error loading ontology image: {e}")
             
         try:
-            st.image("ontology.PNG", caption="Protege Ontology Diagram", use_column_width=True)
+            st.image("ontology2.png", caption="Protege Ontology Diagram", use_container_width=True)
         except FileNotFoundError:
             st.error("Ontology image not found. Please ensure 'ontology.PNG' is in the same directory.")
         except Exception as e:
