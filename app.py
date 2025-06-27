@@ -6,8 +6,9 @@ import numpy as np
 import time
 import datetime
 import firebase_admin
-from firebase_admin import credentials, firestore, auth
+from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
+import hashlib
 
 # Set page config
 st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
@@ -26,6 +27,12 @@ st.markdown("""
         margin-top: 50px;
         padding: 20px;
         color: #aaa;
+    }
+    .info-container {
+        background-color: #f0f2f6;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -57,50 +64,89 @@ def init_firebase():
         st.error(f"Firebase initialization error: {e}")
         return None
 
+# Hash password for storage
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
 # Authentication functions
 def sign_up(email, password, username):
     try:
         db = init_firebase()
         if not db:
-            return None
+            return False
             
-        # Create user in Firebase Auth
-        user = auth.create_user(
-            email=email,
-            password=password,
-            display_name=username
-        )
+        # Check if email already exists
+        users_ref = db.collection('users')
+        query = users_ref.where('email', '==', email).limit(1).get()
+        
+        if len(query) > 0:
+            st.error("Email already exists. Please use a different email.")
+            return False
         
         # Create user document in Firestore
-        user_ref = db.collection('users').document(user.uid)
-        user_ref.set({
+        user_data = {
             'username': username,
             'email': email,
-            'created_at': datetime.datetime.now(datetime.timezone.utc)
-        })
+            'password': hash_password(password),  # Store hashed password
+            'created_at': datetime.datetime.now(datetime.timezone.utc),
+            'last_login': datetime.datetime.now(datetime.timezone.utc)
+        }
         
-        return user
+        # Add a new document with auto-generated ID
+        doc_ref = users_ref.add(user_data)
+        
+        # Set the user in session state
+        st.session_state.user = {
+            'uid': doc_ref[1].id,
+            'email': email,
+            'username': username
+        }
+        
+        return True
+        
     except Exception as e:
         st.error(f"Sign up error: {e}")
-        return None
+        return False
 
 def sign_in(email, password):
     try:
-        # Initialize Firebase Auth
         db = init_firebase()
         if not db:
-            return None
+            return False
             
-        # Sign in with email and password
-        user = auth.get_user_by_email(email)
+        # Get user from Firestore
+        users_ref = db.collection('users')
+        query = users_ref.where('email', '==', email).limit(1).get()
         
-        # Verify password (this is a simplified approach - in production, use Firebase Auth SDK)
-        # Note: In a real app, you should use Firebase Auth client-side SDK for proper authentication
-        # This is a simplified version for demonstration
-        return user
+        if len(query) == 0:
+            st.error("Email not found. Please sign up first.")
+            return False
+            
+        user_doc = query[0]
+        user_data = user_doc.to_dict()
+        
+        # Verify password
+        if user_data['password'] != hash_password(password):
+            st.error("Incorrect password. Please try again.")
+            return False
+            
+        # Update last login time
+        users_ref.document(user_doc.id).update({
+            'last_login': datetime.datetime.now(datetime.timezone.utc)
+        })
+        
+        # Set the user in session state
+        st.session_state.user = {
+            'uid': user_doc.id,
+            'email': user_data['email'],
+            'username': user_data['username']
+        }
+        
+        return True
+        
     except Exception as e:
         st.error(f"Sign in error: {e}")
-        return None
+        return False
 
 def sign_out():
     st.session_state.clear()
@@ -109,6 +155,78 @@ def sign_out():
 # Check if user is logged in
 def is_logged_in():
     return 'user' in st.session_state
+
+# Show system information
+def show_system_info():
+    st.title("High Blood Pressure Risk Prediction System")
+    
+    with st.container():
+        st.markdown("""
+        <div class="info-container">
+            <h3>About This System</h3>
+            <p>This system helps predict the risk of developing High Blood Pressure (HBP) 
+            based on various health and lifestyle factors.</p>
+            
+            <h4>Key Features:</h4>
+            <ul>
+                <li>Personalized risk assessment</li>
+                <li>Secure user accounts</li>
+                <li>Prediction history tracking</li>
+                <li>Visualization of risk factors</li>
+                <li>Personalized care recommendations</li>
+            </ul>
+            
+            <h4>How It Works:</h4>
+            <ol>
+                <li>Create an account or sign in</li>
+                <li>Enter your health information</li>
+                <li>Get your personalized risk assessment</li>
+                <li>View recommendations based on your results</li>
+            </ol>
+            
+            <p><strong>Note:</strong> This tool is for informational purposes only and 
+            does not replace professional medical advice.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+# Authentication UI
+def show_auth_ui():
+    show_system_info()
+    
+    auth_tab, signup_tab = st.tabs(["Sign In", "Sign Up"])
+    
+    with auth_tab:
+        with st.form("signin_form"):
+            st.subheader("Sign In to Your Account")
+            email = st.text_input("Email", key="signin_email")
+            password = st.text_input("Password", type="password", key="signin_password")
+            submitted = st.form_submit_button("Sign In")
+            
+            if submitted:
+                if sign_in(email, password):
+                    st.success("Signed in successfully!")
+                    time.sleep(1)
+                    st.rerun()
+    
+    with signup_tab:
+        with st.form("signup_form"):
+            st.subheader("Create New Account")
+            username = st.text_input("Username", key="signup_username")
+            email = st.text_input("Email", key="signup_email")
+            password = st.text_input("Password", type="password", key="signup_password")
+            confirm_password = st.text_input("Confirm Password", type="password", key="signup_confirm_password")
+            submitted = st.form_submit_button("Sign Up")
+            
+            if submitted:
+                if password != confirm_password:
+                    st.error("Passwords do not match!")
+                elif len(password) < 6:
+                    st.error("Password must be at least 6 characters")
+                else:
+                    if sign_up(email, password, username):
+                        st.success("Account created successfully! You are now signed in.")
+                        time.sleep(1)
+                        st.rerun()
 
 # Save prediction to Firestore with user ID
 def save_prediction_to_firestore(input_data, prediction, proba):
@@ -148,7 +266,7 @@ def save_prediction_to_firestore(input_data, prediction, proba):
         
         # Add user ID if logged in
         if is_logged_in():
-            prediction_data['user_id'] = st.session_state.user.uid
+            prediction_data['user_id'] = st.session_state.user['uid']
         
         # Add a new document with auto-generated ID
         doc_ref = predictions_ref.add(prediction_data)
@@ -181,27 +299,6 @@ def get_user_predictions(user_id):
         st.error(f"Error fetching predictions: {e}")
         return None
 
-# Get all predictions (admin only)
-def get_all_predictions():
-    try:
-        db = init_firebase()
-        if not db:
-            return None
-            
-        predictions_ref = db.collection('hbp_predictions')
-        docs = predictions_ref.order_by('timestamp', direction=firestore.Query.DESCENDING).stream()
-        
-        predictions = []
-        for doc in docs:
-            pred_data = doc.to_dict()
-            pred_data['id'] = doc.id
-            predictions.append(pred_data)
-            
-        return predictions
-    except Exception as e:
-        st.error(f"Error fetching predictions: {e}")
-        return None
-
 # Load model and scaler (cached)
 @st.cache_resource
 def load_model_and_scaler():
@@ -215,45 +312,12 @@ except Exception as e:
     st.error(f"Error loading model or scaler: {e}")
     st.stop()
 
-# Authentication UI
-def show_auth_ui():
-    auth_tab, signup_tab = st.tabs(["Sign In", "Sign Up"])
-    
-    with auth_tab:
-        with st.form("signin_form"):
-            email = st.text_input("Email", key="signin_email")
-            password = st.text_input("Password", type="password", key="signin_password")
-            submitted = st.form_submit_button("Sign In")
-            
-            if submitted:
-                user = sign_in(email, password)
-                if user:
-                    st.session_state.user = user
-                    st.success("Signed in successfully!")
-                    time.sleep(1)
-                    st.rerun()
-    
-    with signup_tab:
-        with st.form("signup_form"):
-            username = st.text_input("Username", key="signup_username")
-            email = st.text_input("Email", key="signup_email")
-            password = st.text_input("Password", type="password", key="signup_password")
-            submitted = st.form_submit_button("Sign Up")
-            
-            if submitted:
-                user = sign_up(email, password, username)
-                if user:
-                    st.session_state.user = user
-                    st.success("Account created successfully! You are now signed in.")
-                    time.sleep(1)
-                    st.rerun()
-
 # Sidebar navigation
 with st.sidebar:
     st.title("Menu")
     
     if is_logged_in():
-        st.write(f"Welcome, {st.session_state.user.display_name or st.session_state.user.email}!")
+        st.write(f"Welcome, {st.session_state.user.get('username', st.session_state.user['email'])}!")
         if st.button("Sign Out"):
             sign_out()
     
@@ -308,7 +372,7 @@ elif page == "View History":
     st.title("Your Prediction History")
     
     with st.spinner('Loading your prediction history...'):
-        predictions = get_user_predictions(st.session_state.user.uid)
+        predictions = get_user_predictions(st.session_state.user['uid'])
     
     if predictions:
         st.write(f"Found {len(predictions)} historical predictions")
