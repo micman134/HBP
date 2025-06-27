@@ -6,24 +6,20 @@ import numpy as np
 import time
 import datetime
 import firebase_admin
-from firebase_admin import credentials, firestore, auth
+from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
-import hashlib
-import traceback
 
 # Set page config
-st.set_page_config(
-    page_title="HBP Risk Prediction System",
-    page_icon="❤️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="HBP Risk Prediction System", layout="wide")
 
-# Custom CSS for better styling
+# Hide Streamlit default UI and style footer
 st.markdown("""
-<style>
+    <style>
+    /* Hide default Streamlit UI */
     #MainMenu, footer, header {visibility: hidden;}
-    .stDeployButton {display: none;}
+    .stDeployButton, .st-emotion-cache-13ln4jf, button[kind="icon"] {
+        display: none !important;
+    }
     .custom-footer {
         text-align: center;
         font-size: 14px;
@@ -31,39 +27,17 @@ st.markdown("""
         padding: 20px;
         color: #aaa;
     }
-    .auth-container {
-        max-width: 400px;
-        margin: 0 auto;
-        padding: 20px;
-        border-radius: 10px;
-        background-color: #f8f9fa;
-    }
-    .risk-high {
-        color: #d62728;
-        font-weight: bold;
-    }
-    .risk-medium {
-        color: #ff7f0e;
-        font-weight: bold;
-    }
-    .risk-low {
-        color: #2ca02c;
-        font-weight: bold;
-    }
-    .history-item {
-        padding: 10px;
-        margin-bottom: 10px;
-        border-radius: 5px;
-        background-color: #f0f2f6;
-    }
-</style>
+    </style>
 """, unsafe_allow_html=True)
 
-# Initialize Firebase
-def initialize_firebase():
+# Initialize Firebase (cached to prevent multiple initializations)
+@st.cache_resource
+def init_firebase():
     try:
+        # Check if Firebase app is already initialized
         if not firebase_admin._apps:
-            firebase_config = {
+            # Load credentials from secrets
+            firebase_creds = {
                 "type": st.secrets["firebase"]["type"],
                 "project_id": st.secrets["firebase"]["project_id"],
                 "private_key_id": st.secrets["firebase"]["private_key_id"],
@@ -76,108 +50,23 @@ def initialize_firebase():
                 "client_x509_cert_url": st.secrets["firebase"]["client_x509_cert_url"]
             }
             
-            cred = credentials.Certificate(firebase_config)
+            cred = credentials.Certificate(firebase_creds)
             firebase_admin.initialize_app(cred)
         return firestore.client()
     except Exception as e:
-        st.error(f"Failed to initialize Firebase: {str(e)}")
-        traceback.print_exc()
+        st.error(f"Firebase initialization error: {e}")
         return None
 
-# Initialize Firebase connection
-db = initialize_firebase()
-
-# Authentication functions
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def create_user(email, password, name):
-    try:
-        # First check if user already exists in our collection
-        users_ref = db.collection("users")
-        query = users_ref.where("email", "==", email).limit(1).get()
-        
-        if len(query) > 0:
-            st.error("Email already exists!")
-            return None
-            
-        # Create user in Firebase Auth
-        user = auth.create_user(
-            email=email,
-            password=password,
-            display_name=name
-        )
-        
-        # Store user in our users collection
-        user_data = {
-            "uid": user.uid,
-            "email": email,
-            "name": name,
-            "password_hash": hash_password(password),  # Store hashed password
-            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "last_login": None,
-            "role": "user"
-        }
-        
-        users_ref.document(user.uid).set(user_data)
-        
-        return user
-    except Exception as e:
-        st.error(f"Error creating user: {str(e)}")
-        traceback.print_exc()
-        return None
-
-def authenticate_user(email, password):
-    try:
-        # First check our users collection
-        users_ref = db.collection("users")
-        query = users_ref.where("email", "==", email).limit(1).get()
-        
-        if len(query) == 0:
-            st.error("Invalid email or password")
-            return None
-            
-        user_data = query[0].to_dict()
-        stored_hash = user_data.get("password_hash")
-        
-        # Verify password hash
-        if hash_password(password) != stored_hash:
-            st.error("Invalid email or password")
-            return None
-            
-        # Get the Firebase Auth user
-        user = auth.get_user_by_email(email)
-        
-        # Update last login time
-        users_ref.document(user.uid).update({
-            "last_login": datetime.datetime.now(datetime.timezone.utc).isoformat()
-        })
-        
-        return {
-            'uid': user.uid,
-            'email': user.email,
-            'name': user_data.get('name', user.email),
-            'role': user_data.get('role', 'user')
-        }
-    except Exception as e:
-        st.error(f"Error authenticating user: {str(e)}")
-        traceback.print_exc()
-        return None
-
-def sign_out():
-    """Clear user session"""
-    st.session_state.pop('user', None)
-    st.session_state.page = "login"
-    st.rerun()
-
-# Store prediction in Firestore
+# Save prediction to Firestore
 def save_prediction_to_firestore(input_data, prediction, proba):
     try:
-        if not db or 'user' not in st.session_state:
+        db = init_firebase()
+        if not db:
             return False
             
+        predictions_ref = db.collection('hbp_predictions')
+        
         prediction_data = {
-            'user_id': st.session_state.user['uid'],
             'age': input_data['Age'],
             'bmi': input_data['BMI'],
             'loh': input_data['LOH'],
@@ -193,7 +82,7 @@ def save_prediction_to_firestore(input_data, prediction, proba):
             'smoking': 'Yes' if input_data['Smoking'] == 1 else 'No',
             'prediction': 'High Risk' if prediction[0] == 1 else 'Low Risk',
             'probability': float(proba[1]),
-            'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'timestamp': datetime.datetime.now(datetime.timezone.utc),
             'risk_factors': {
                 'age_gt_50': input_data['Age'] > 50,
                 'bmi_gt_30': input_data['BMI'] >= 30,
@@ -204,42 +93,39 @@ def save_prediction_to_firestore(input_data, prediction, proba):
             }
         }
         
-        doc_ref = db.collection('hbp_predictions').add(prediction_data)
+        # Add a new document with auto-generated ID
+        doc_ref = predictions_ref.add(prediction_data)
         return True
         
     except Exception as e:
         st.error(f"Firestore save error: {e}")
-        traceback.print_exc()
         return False
 
-# Get user's predictions from Firestore
-def get_user_predictions(user_id):
+# Get all predictions from Firestore
+def get_all_predictions():
     try:
+        db = init_firebase()
         if not db:
-            st.warning("Database connection failed")
             return None
             
         predictions_ref = db.collection('hbp_predictions')
-        docs = predictions_ref.where('user_id', '==', user_id)\
-                             .order_by('timestamp', direction=firestore.Query.DESCENDING)\
-                             .stream()
+        docs = predictions_ref.order_by('timestamp', direction=firestore.Query.DESCENDING).stream()
         
         predictions = []
         for doc in docs:
-            try:
-                pred_data = doc.to_dict()
-                pred_data['id'] = doc.id
-                predictions.append(pred_data)
-            except Exception as e:
-                st.warning(f"Skipping corrupt document: {e}")
-                continue
-                
-        return predictions if predictions else None
-        
+            pred_data = doc.to_dict()
+            pred_data['id'] = doc.id
+            predictions.append(pred_data)
+            
+        return predictions
     except Exception as e:
-        st.error(f"Error fetching predictions: {str(e)[:200]}")
-        traceback.print_exc()
+        st.error(f"Error fetching predictions: {e}")
         return None
+
+# Sidebar navigation
+with st.sidebar:
+    st.title("Menu")
+    page = st.radio("Go to", ["Predict", "View History", "Ontology", "About"])
 
 # Load model and scaler (cached)
 @st.cache_resource
@@ -254,376 +140,284 @@ except Exception as e:
     st.error(f"Error loading model or scaler: {e}")
     st.stop()
 
-# Session state management
-if 'user' not in st.session_state:
-    st.session_state.user = None
-if 'page' not in st.session_state:
-    st.session_state.page = "login"
-if 'submitted' not in st.session_state:
-    st.session_state.submitted = False
+# Ontology page
+if page == "Ontology":
+    st.title("Ontology For HBP Prediction System")
+    st.write("""
+    ### Key Concepts and Relationships
+    **Risk Factor Categories**:
+    - **Demographic**: Age, Gender, Pregnancy Status
+    - **Lifestyle**: Smoking, Alcohol Consumption, Physical Activity
+    - **Clinical**: Chronic Kidney Disease, Thyroid Disorders
+    - **Biochemical**: Hemoglobin Levels, Salt Intake
+    - **Genetic**: Inbreeding Coefficient
+    """)
+    try:
+        st.image("ontology2.png", caption="HBP Risk Factor Ontology Diagram", use_column_width=True)
+    except FileNotFoundError:
+        st.error("Ontology image not found. Please ensure 'ontology.PNG' is in the same directory.")
+    except Exception as e:
+        st.error(f"Error loading ontology image: {e}")
+        
+    try:
+        st.image("ontology.PNG", caption="Protege Ontology Diagram", use_column_width=True)
+    except FileNotFoundError:
+        st.error("Ontology image not found. Please ensure 'ontology.PNG' is in the same directory.")
+    except Exception as e:
+        st.error(f"Error loading ontology image: {e}")
 
-# Authentication Pages
-def login_page():
-    st.title("HBP Risk Prediction System")
-    st.warning("Please sign in to use the prediction tool")
+# About page
+elif page == "About":
+    st.title("About This Tool")
+    st.write("""
+    ### High Blood Pressure Risk Prediction Tool
+    **Version**: 1.0.0  
+    **Purpose**: Clinical decision support for Blood Pressure Abnormalities risk assessment  
+    **Methodology**:
+    - Machine learning model trained on 2,000+ patient records
+    - Validated with 85% accuracy
+    - Incorporates 13 key risk factors
+    - Data stored securely in Firebase Firestore
+    """)
+
+# View History page
+elif page == "View History":
+    st.title("Prediction History")
     
-    with st.container():
-        st.markdown('<div class="auth-container">', unsafe_allow_html=True)
-        st.subheader("Sign In")
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Login"):
-                user = authenticate_user(email, password)
-                if user:
-                    st.session_state.user = user
-                    st.session_state.page = "app"
-                    st.rerun()
-                else:
-                    st.error("Invalid email or password")
-        
-        with col2:
-            if st.button("Create Account"):
-                st.session_state.page = "signup"
-                st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-
-def signup_page():
-    st.title("HBP Risk Prediction System")
+    with st.spinner('Loading prediction history...'):
+        predictions = get_all_predictions()
     
-    with st.container():
-        st.markdown('<div class="auth-container">', unsafe_allow_html=True)
-        st.subheader("Create Account")
-        name = st.text_input("Full Name")
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        confirm_password = st.text_input("Confirm Password", type="password")
+    if predictions:
+        st.write(f"Found {len(predictions)} historical predictions")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Sign Up"):
-                if password != confirm_password:
-                    st.error("Passwords don't match!")
-                elif len(password) < 6:
-                    st.error("Password must be at least 6 characters")
-                else:
-                    user = create_user(email, password, name)
-                    if user:
-                        st.session_state.user = {
-                            'uid': user.uid,
-                            'email': user.email,
-                            'name': name,
-                            'role': 'user'
-                        }
-                        st.session_state.page = "app"
-                        st.success("Account created successfully!")
-                        st.rerun()
+        # Convert to DataFrame for display
+        history_df = pd.DataFrame([{
+            'Date': pred['timestamp'].strftime('%Y-%m-%d %H:%M'),
+            'Age': pred['age'],
+            'Gender': pred['gender'],
+            'Prediction': pred['prediction'],
+            'Probability': f"{pred['probability']:.1%}",
+            'Risk Factors': ', '.join([k.replace('_', ' ') for k, v in pred['risk_factors'].items() if v])
+        } for pred in predictions])
         
-        with col2:
-            if st.button("Back to Login"):
-                st.session_state.page = "login"
-                st.rerun()
+        st.dataframe(history_df, use_container_width=True)
         
-        st.markdown('</div>', unsafe_allow_html=True)
-
-# Main App Pages
-def main_app():
-    # Sidebar navigation and user info
-    with st.sidebar:
-        if st.session_state.user:
-            st.markdown(f"### 👤 {st.session_state.user['name']}")
-            st.markdown(f"Email: {st.session_state.user['email']}")
-            
-            if st.button("Logout"):
-                sign_out()
+        # Show detailed view
+        selected_pred = st.selectbox("Select a prediction to view details:", 
+                                   range(len(predictions)), 
+                                   format_func=lambda x: f"Prediction {x+1} - {predictions[x]['timestamp'].strftime('%Y-%m-%d %H:%M')}")
         
-        st.title("Menu")
-        page = st.radio("Navigation", ["Predict", "View History", "Ontology", "About"])
-
-    # Ontology page
-    if page == "Ontology":
-        st.title("Ontology For HBP Prediction System")
-        st.write("""
-        ### Key Concepts and Relationships
-        **Risk Factor Categories**:
-        - **Demographic**: Age, Gender, Pregnancy Status
-        - **Lifestyle**: Smoking, Alcohol Consumption, Physical Activity
-        - **Clinical**: Chronic Kidney Disease, Thyroid Disorders
-        - **Biochemical**: Hemoglobin Levels, Salt Intake
-        - **Genetic**: Inbreeding Coefficient
-        """)
-        try:
-            st.image("ontology.png", caption="HBP Risk Factor Ontology Diagram", use_container_width=True)
-        except FileNotFoundError:
-            st.error("Ontology image not found. Please ensure 'ontology.PNG' is in the same directory.")
-        except Exception as e:
-            st.error(f"Error loading ontology image: {e}")
-            
-        try:
-            st.image("ontology2.png", caption="Protege Ontology Diagram", use_container_width=True)
-        except FileNotFoundError:
-            st.error("Ontology image not found. Please ensure 'ontology.PNG' is in the same directory.")
-        except Exception as e:
-            st.error(f"Error loading ontology image: {e}")
-
-    # About page
-    elif page == "About":
-        st.title("About This Tool")
-        st.write("""
-        ### High Blood Pressure Risk Prediction Tool
-        **Version**: 1.0.0  
-        **Purpose**: Clinical decision support for Blood Pressure Abnormalities risk assessment  
-        **Methodology**:
-        - Machine learning model trained on 2,000+ patient records
-        - Validated with 85% accuracy
-        - Incorporates 13 key risk factors
-        - Data stored securely in Firebase Firestore
-        """)
-
-    # View History page
-    elif page == "View History":
-        st.title("Prediction History")
-        
-        with st.spinner('Loading your prediction history...'):
-            predictions = get_user_predictions(st.session_state.user['uid'])
-        
-        if predictions:
-            st.write(f"Found {len(predictions)} historical predictions")
-            
-            history_df = pd.DataFrame([{
-                'Date': datetime.datetime.fromisoformat(pred['timestamp']).strftime('%Y-%m-%d %H:%M'),
-                'Age': pred['age'],
-                'Gender': pred['gender'],
-                'Prediction': pred['prediction'],
-                'Probability': f"{pred['probability']:.1%}",
-                'Risk Factors': ', '.join([k.replace('_', ' ') for k, v in pred['risk_factors'].items() if v])
-            } for pred in predictions])
-            
-            st.dataframe(history_df, use_container_width=True)
-            
-            selected_pred = st.selectbox("Select a prediction to view details:", 
-                                       range(len(predictions)), 
-                                       format_func=lambda x: f"Prediction {x+1} - {datetime.datetime.fromisoformat(predictions[x]['timestamp']).strftime('%Y-%m-%d %H:%M')}")
-            
-            if selected_pred is not None:
-                pred = predictions[selected_pred]
-                with st.expander("Detailed View", expanded=True):
-                    col1, col2 = st.columns(2)
+        if selected_pred is not None:
+            pred = predictions[selected_pred]
+            with st.expander("Detailed View", expanded=True):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.subheader("Patient Details")
+                    st.write(f"**Age**: {pred['age']}")
+                    st.write(f"**Gender**: {pred['gender']}")
+                    st.write(f"**BMI**: {pred['bmi']:.1f}")
+                    st.write(f"**Pregnancy**: {pred['pregnancy']}")
                     
-                    with col1:
-                        st.subheader("Patient Details")
-                        st.write(f"**Age**: {pred['age']}")
-                        st.write(f"**Gender**: {pred['gender']}")
-                        st.write(f"**BMI**: {pred['bmi']:.1f}")
-                        st.write(f"**Pregnancy**: {pred['pregnancy']}")
-                        
-                    with col2:
-                        st.subheader("Lifestyle Factors")
-                        st.write(f"**Smoking**: {pred['smoking']}")
-                        st.write(f"**Alcohol (ml/day)**: {pred['alcohol']}")
-                        st.write(f"**Physical Activity**: {pred['physical_activity']}")
-                        st.write(f"**Salt Intake (g)**: {pred['salt_intake']:.1f}")
-                    
-                    st.subheader("Clinical Factors")
-                    col3, col4 = st.columns(2)
-                    with col3:
-                        st.write(f"**Chronic Kidney Disease**: {'Yes' if pred['ckd'] else 'No'}")
-                        st.write(f"**Thyroid Disorders**: {'Yes' if pred['atd'] else 'No'}")
-                    with col4:
-                        st.write(f"**Hemoglobin Level**: {pred['loh']:.1f} g/dl")
-                        st.write(f"**Inbreeding Coefficient**: {pred['gpc']:.2f}")
-                    
-                    st.subheader("Prediction Results")
-                    fig, ax = plt.subplots(figsize=(6, 3))
-                    ax.bar(['Low Risk', 'High Risk'], 
-                          [1 - pred['probability'], pred['probability']], 
-                          color=['#2ecc71', '#e74c3c'])
-                    ax.set_ylim(0, 1)
-                    ax.set_title('Risk Probability')
-                    st.pyplot(fig)
-        else:
-            st.warning("No prediction history found")
-
-    # Prediction page
+                with col2:
+                    st.subheader("Lifestyle Factors")
+                    st.write(f"**Smoking**: {pred['smoking']}")
+                    st.write(f"**Alcohol (ml/day)**: {pred['alcohol']}")
+                    st.write(f"**Physical Activity**: {pred['physical_activity']}")
+                    st.write(f"**Salt Intake (g)**: {pred['salt_intake']:.1f}")
+                
+                st.subheader("Clinical Factors")
+                col3, col4 = st.columns(2)
+                with col3:
+                    st.write(f"**Chronic Kidney Disease**: {'Yes' if pred['ckd'] else 'No'}")
+                    st.write(f"**Thyroid Disorders**: {'Yes' if pred['atd'] else 'No'}")
+                with col4:
+                    st.write(f"**Hemoglobin Level**: {pred['loh']:.1f} g/dl")
+                    st.write(f"**Inbreeding Coefficient**: {pred['gpc']:.2f}")
+                
+                st.subheader("Prediction Results")
+                fig, ax = plt.subplots(figsize=(6, 3))
+                ax.bar(['Low Risk', 'High Risk'], 
+                      [1 - pred['probability'], pred['probability']], 
+                      color=['#2ecc71', '#e74c3c'])
+                ax.set_ylim(0, 1)
+                ax.set_title('Risk Probability')
+                st.pyplot(fig)
     else:
-        st.title("High Blood Pressure Risk Prediction Tool")
-        st.write("""
-        This tool predicts the risk of HBP based on patient characteristics.
-        Please fill in all the fields below and click 'Predict'.
-        """)
+        st.warning("No prediction history found")
 
-        with st.form("prediction_form"):
-            col1, col2 = st.columns(2)
+# Prediction page
+else:
+    st.title("High Blood Pressure Risk Prediction Tool")
+    st.write("""
+    This tool predicts the risk of HBP based on patient characteristics.
+    Please fill in all the fields below and click 'Predict'.
+    """)
 
-            with col1:
-                age = st.number_input("Age (years)", 0, 120, 45)
-                bmi = st.number_input("Body Mass Index (kg/m²)", 10.0, 50.0, 25.0, step=0.1)
-                loh = st.number_input("Level Of Haemoglobin (Hb g/dl)", 0.0, 20.0, 12.0, step=0.1)
-                gpc = st.number_input("Inbreed Coefficient", 0.0, 1.0, 0.0, step=0.01)
-                pa = st.number_input("Physical Activity (CAL/4.18Kj)", 0, value=2000)
-                scid = st.number_input("Salt Content in diet (grams)", 0.0, value=5.0, step=0.1)
+    if 'submitted' not in st.session_state:
+        st.session_state.submitted = False
 
-            with col2:
-                alcohol = st.number_input("Alcohol Consumption Per Day (ml)", 0, value=0)
-                los = st.selectbox("Level Of Stress", 
-                                   ["Select", "Acute/normal stress", "Episodic acute stress", "Chronic Stress"], index=0)
-                ckd = st.selectbox("Chronic Kidney Disease", ["Select", "Yes", "No"], index=0)
-                atd = st.selectbox("Adrenal and Thyroid Disorders", ["Select", "Yes", "No"], index=0)
-                gender = st.selectbox("Gender", ["Select Gender", "Female", "Male"], index=0)
-                pregnancy = st.selectbox("Pregnancy Status", ["Select", "Yes", "No"], index=0)
-                smoking = st.selectbox("Smoking Status", ["Select", "Yes", "No"], index=0)
+    with st.form("prediction_form"):
+        col1, col2 = st.columns(2)
 
-            submitted = st.form_submit_button("Predict HBP Risk")
-            if submitted:
-                st.session_state.submitted = True
+        with col1:
+            age = st.number_input("Age (years)", 0, 120, 45)
+            bmi = st.number_input("Body Mass Index (kg/m²)", 10.0, 50.0, 25.0, step=0.1)
+            loh = st.number_input("Level Of Haemoglobin (Hb g/dl)", 0.0, 20.0, 12.0, step=0.1)
+            gpc = st.number_input("Inbreed Coefficient", 0.0, 1.0, 0.0, step=0.01)
+            pa = st.number_input("Physical Activity (CAL/4.18Kj)", 0, value=2000)
+            scid = st.number_input("Salt Content in diet (grams)", 0.0, value=5.0, step=0.1)
 
-        if st.session_state.get('submitted', False):
-            if "Select" in [los, ckd, atd, gender, pregnancy, smoking] or gender == "Select Gender":
-                st.error("Please fill in all fields before submitting")
-                st.session_state.submitted = False
-            else:
-                try:
-                    with st.spinner('Analyzing health data and calculating risk...'):
-                        time.sleep(1)
+        with col2:
+            alcohol = st.number_input("Alcohol Consumption Per Day (ml)", 0, value=0)
+            los = st.selectbox("Level Of Stress", 
+                               ["Select", "Acute/normal stress", "Episodic acute stress", "Chronic Stress"], index=0)
+            ckd = st.selectbox("Chronic Kidney Disease", ["Select", "Yes", "No"], index=0)
+            atd = st.selectbox("Adrenal and Thyroid Disorders", ["Select", "Yes", "No"], index=0)
+            gender = st.selectbox("Gender", ["Select Gender", "Female", "Male"], index=0)
+            pregnancy = st.selectbox("Pregnancy Status", ["Select", "Yes", "No"], index=0)
+            smoking = st.selectbox("Smoking Status", ["Select", "Yes", "No"], index=0)
 
-                        input_data = {
-                            'LOH': loh,
-                            'GPC': gpc,
-                            'Age': age,
-                            'BMI': bmi,
-                            'Sex': 1 if gender == "Female" else 0,
-                            'Pregnancy': 1 if pregnancy == "Yes" else 0,
-                            'Smoking': 1 if smoking == "Yes" else 0,
-                            'PA': pa,
-                            'salt_CID': scid,
-                            'alcohol_CPD': alcohol,
-                            'LOS': ["Acute/normal stress", "Episodic acute stress", "Chronic Stress"].index(los) + 1,
-                            'CKD': 1 if ckd == "Yes" else 0,
-                            'ATD': 1 if atd == "Yes" else 0
-                        }
+        submitted = st.form_submit_button("Predict HBP Risk")
+        if submitted:
+            st.session_state.submitted = True
 
-                        features = ['LOH', 'GPC', 'Age', 'BMI', 'Sex', 'Pregnancy', 'Smoking',
-                                    'PA', 'salt_CID', 'alcohol_CPD', 'LOS', 'CKD', 'ATD']
-                        X = pd.DataFrame([[input_data[feature] for feature in features]], columns=features)
+    if st.session_state.get('submitted', False):
+        if "Select" in [los, ckd, atd, gender, pregnancy, smoking] or gender == "Select Gender":
+            st.error("Please fill in all fields before submitting")
+            st.session_state.submitted = False
+        else:
+            try:
+                with st.spinner('Analyzing health data and calculating risk...'):
+                    time.sleep(1)
 
-                        X_scaled = scaler.transform(X)
-                        prediction = model.predict(X_scaled)
-                        proba = model.predict_proba(X_scaled)[0] if hasattr(model, "predict_proba") else [0.5, 0.5]
-                        
-                        if save_prediction_to_firestore(input_data, prediction, proba):
-                            st.success("Prediction saved to your history")
-                        else:
-                            st.warning("Prediction completed but not saved to history")
+                    input_data = {
+                        'LOH': loh,
+                        'GPC': gpc,
+                        'Age': age,
+                        'BMI': bmi,
+                        'Sex': 1 if gender == "Female" else 0,
+                        'Pregnancy': 1 if pregnancy == "Yes" else 0,
+                        'Smoking': 1 if smoking == "Yes" else 0,
+                        'PA': pa,
+                        'salt_CID': scid,
+                        'alcohol_CPD': alcohol,
+                        'LOS': ["Acute/normal stress", "Episodic acute stress", "Chronic Stress"].index(los) + 1,
+                        'CKD': 1 if ckd == "Yes" else 0,
+                        'ATD': 1 if atd == "Yes" else 0
+                    }
 
-                    st.divider()
-                    col1, col2 = st.columns([1, 1.5])
+                    features = ['LOH', 'GPC', 'Age', 'BMI', 'Sex', 'Pregnancy', 'Smoking',
+                                'PA', 'salt_CID', 'alcohol_CPD', 'LOS', 'CKD', 'ATD']
+                    X = pd.DataFrame([[input_data[feature] for feature in features]], columns=features)
 
-                    with col1:
-                        st.subheader("Clinical Summary")
-                        if prediction[0] == 1:
-                            st.error(f"**High Risk of Hypertension**")
-                            st.warning("Consider immediate clinical evaluation")
-                        else:
-                            st.success(f"**Low Risk of Hypertension**")
-                            st.info("Routine monitoring recommended")
+                    X_scaled = scaler.transform(X)
+                    prediction = model.predict(X_scaled)
+                    proba = model.predict_proba(X_scaled)[0] if hasattr(model, "predict_proba") else [0.5, 0.5]
+                    
+                    # Save to Firestore
+                    if save_prediction_to_firestore(input_data, prediction, proba):
+                        st.success("Prediction saved to database")
+                    else:
+                        st.warning("Prediction completed but not saved to database")
 
-                        st.markdown("**Key Risk Factors Identified:**")
-                        risk_factors = {
-                            'Age > 50': age > 50,
-                            'BMI ≥ 30': bmi >= 30,
-                            'High Salt Intake': scid > 2325,
-                            'Chronic Stress': los == "Chronic Stress",
-                            'Current Smoker': smoking == "Yes",
-                            'Alcohol > 2 drinks/day': alcohol > 355
-                        }
+                st.divider()
+                col1, col2 = st.columns([1, 1.5])
 
-                        for factor, present in risk_factors.items():
-                            if present:
-                                st.markdown(f"- 🔴 {factor}")
+                with col1:
+                    st.subheader("Clinical Summary")
+                    if prediction[0] == 1:
+                        st.error(f"**High Risk of Hypertension**")
+                        st.warning("Consider immediate clinical evaluation")
+                    else:
+                        st.success(f"**Low Risk of Hypertension**")
+                        st.info("Routine monitoring recommended")
 
-                    with col2:
-                        fig1, ax1 = plt.subplots(figsize=(8, 4))
-                        ax1.bar(['Low Risk', 'High Risk'], proba, color=['#2ecc71', '#e74c3c'], width=0.6)
-                        ax1.set_ylim(0, 1)
-                        ax1.set_ylabel('Probability', fontsize=10)
-                        ax1.set_title('Hypertension Risk Probability', pad=15, fontsize=12)
-                        ax1.set_yticks([0, 1])
+                    st.markdown("**Key Risk Factors Identified:**")
+                    risk_factors = {
+                        'Age > 50': age > 50,
+                        'BMI ≥ 30': bmi >= 30,
+                        'High Salt Intake': scid > 2325,
+                        'Chronic Stress': los == "Chronic Stress",
+                        'Current Smoker': smoking == "Yes",
+                        'Alcohol > 2 drinks/day': alcohol > 355
+                    }
 
-                        for i, v in enumerate(proba):
-                            ax1.text(i, v + 0.02, f"{v:.1%}", ha='center', fontsize=11, weight='bold')
+                    for factor, present in risk_factors.items():
+                        if present:
+                            st.markdown(f"- 🔴 {factor}")
 
-                        st.pyplot(fig1)
+                with col2:
+                    fig1, ax1 = plt.subplots(figsize=(8, 4))
+                    ax1.bar(['Low Risk', 'High Risk'], proba, color=['#2ecc71', '#e74c3c'], width=0.6)
+                    ax1.set_ylim(0, 1)
+                    ax1.set_ylabel('Probability', fontsize=10)
+                    ax1.set_title('Hypertension Risk Probability', pad=15, fontsize=12)
+                    ax1.set_yticks([0, 1])
 
-                    st.divider()
-                    st.subheader("Personalized Care Plan")
+                    for i, v in enumerate(proba):
+                        ax1.text(i, v + 0.02, f"{v:.1%}", ha='center', fontsize=11, weight='bold')
 
-                    rec_cols = st.columns(3)
-                    with rec_cols[0]:
-                        st.markdown("**Lifestyle Modifications**")
-                        if bmi >= 30:
-                            st.write("- Weight reduction program")
-                        if scid > 3:
-                            st.write("- Sodium restriction (<2g/day)")
-                        if pa < 1500:
-                            st.write("- Increase physical activity")
-                        if alcohol > 14:
-                            st.write("- Reduce alcohol consumption")
+                    st.pyplot(fig1)
 
-                    with rec_cols[1]:
-                        st.markdown("**Clinical Monitoring**")
-                        if prediction[0] == 1:
-                            st.write("- Weekly BP checks")
-                            st.write("- Renal function tests")
-                        else:
-                            st.write("- Annual screening")
-                        if pregnancy == "Yes":
-                            st.write("- High-risk obstetric follow-up")
+                st.divider()
+                st.subheader("Personalized Care Plan")
 
-                    with rec_cols[2]:
-                        st.markdown("**Specialist Referrals**")
-                        if ckd == "Yes":
-                            st.write("- Nephrology consult")
-                        if atd == "Yes":
-                            st.write("- Endocrinology evaluation")
-                        if los == "Chronic Stress":
-                            st.write("- Behavioral health referral")
+                rec_cols = st.columns(3)
+                with rec_cols[0]:
+                    st.markdown("**Lifestyle Modifications**")
+                    if bmi >= 30:
+                        st.write("- Weight reduction program")
+                    if scid > 3:
+                        st.write("- Sodium restriction (<2g/day)")
+                    if pa < 1500:
+                        st.write("- Increase physical activity")
+                    if alcohol > 14:
+                        st.write("- Reduce alcohol consumption")
 
-                    st.divider()
+                with rec_cols[1]:
+                    st.markdown("**Clinical Monitoring**")
+                    if prediction[0] == 1:
+                        st.write("- Weekly BP checks")
+                        st.write("- Renal function tests")
+                    else:
+                        st.write("- Annual screening")
+                    if pregnancy == "Yes":
+                        st.write("- High-risk obstetric follow-up")
 
-                    if hasattr(model, "feature_importances_"):
-                        st.subheader("Key Predictive Factors")
-                        importance = pd.DataFrame({
-                            'Factor': features,
-                            'Impact': model.feature_importances_
-                        }).sort_values('Impact', ascending=False)
+                with rec_cols[2]:
+                    st.markdown("**Specialist Referrals**")
+                    if ckd == "Yes":
+                        st.write("- Nephrology consult")
+                    if atd == "Yes":
+                        st.write("- Endocrinology evaluation")
+                    if los == "Chronic Stress":
+                        st.write("- Behavioral health referral")
 
-                        fig2, ax2 = plt.subplots(figsize=(8, 5))
-                        ax2.barh(importance['Factor'][:8],
-                                 importance['Impact'][:8],
-                                 color=plt.cm.Blues(np.linspace(0.3, 1, 8)))
-                        ax2.set_xlabel('Relative Importance', fontsize=10)
-                        ax2.set_title('Top Contributing Factors', pad=15, fontsize=12)
-                        st.pyplot(fig2)
+                st.divider()
 
-                        with st.expander("View Complete Factor Analysis"):
-                            st.dataframe(importance.set_index('Factor').style.background_gradient(cmap='Blues'))
+                if hasattr(model, "feature_importances_"):
+                    st.subheader("Key Predictive Factors")
+                    importance = pd.DataFrame({
+                        'Factor': features,
+                        'Impact': model.feature_importances_
+                    }).sort_values('Impact', ascending=False)
 
-                    st.divider()
+                    fig2, ax2 = plt.subplots(figsize=(8, 5))
+                    ax2.barh(importance['Factor'][:8],
+                             importance['Impact'][:8],
+                             color=plt.cm.Blues(np.linspace(0.3, 1, 8)))
+                    ax2.set_xlabel('Relative Importance', fontsize=10)
+                    ax2.set_title('Top Contributing Factors', pad=15, fontsize=12)
+                    st.pyplot(fig2)
 
-                except Exception as e:
-                    st.error(f"An error occurred during prediction: {e}")
-                    traceback.print_exc()
+                    with st.expander("View Complete Factor Analysis"):
+                        st.dataframe(importance.set_index('Factor').style.background_gradient(cmap='Blues'))
 
-# Main App Flow
-if st.session_state.page == "login":
-    login_page()
-elif st.session_state.page == "signup":
-    signup_page()
-elif st.session_state.page == "app":
-    main_app()
+                st.divider()
+
+            except Exception as e:
+                st.error(f"An error occurred during prediction: {e}")
 
 # Footer
 st.markdown("""
