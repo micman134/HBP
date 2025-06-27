@@ -296,17 +296,17 @@ with st.sidebar:
         st.title("Menu")
         page = st.radio("Go to", ["Predict", "View History", "Ontology", "About"])
     else:
-        st.title("System Information")
-        st.write("""
-        ### High Blood Pressure Risk Prediction System
-        Please login or sign up to access the prediction tool.
+        st.title("")
+        # st.write("""
+        # ### High Blood Pressure Risk Prediction System
+        # Please login or sign up to access the prediction tool.
         
-        **Features**:
-        - Personalized risk assessment
-        - Historical prediction tracking
-        - Detailed ontology visualization
-        - Clinical recommendations
-        """)
+        # **Features**:
+        # - Personalized risk assessment
+        # - Historical prediction tracking
+        # - Detailed ontology visualization
+        # - Clinical recommendations
+        # """)
 
 # Main content area
 if not st.session_state.user:
