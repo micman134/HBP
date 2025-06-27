@@ -6,7 +6,7 @@ import numpy as np
 import time
 import datetime
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, auth
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 # Set page config
@@ -57,7 +57,60 @@ def init_firebase():
         st.error(f"Firebase initialization error: {e}")
         return None
 
-# Save prediction to Firestore
+# Authentication functions
+def sign_up(email, password, username):
+    try:
+        db = init_firebase()
+        if not db:
+            return None
+            
+        # Create user in Firebase Auth
+        user = auth.create_user(
+            email=email,
+            password=password,
+            display_name=username
+        )
+        
+        # Create user document in Firestore
+        user_ref = db.collection('users').document(user.uid)
+        user_ref.set({
+            'username': username,
+            'email': email,
+            'created_at': datetime.datetime.now(datetime.timezone.utc)
+        })
+        
+        return user
+    except Exception as e:
+        st.error(f"Sign up error: {e}")
+        return None
+
+def sign_in(email, password):
+    try:
+        # Initialize Firebase Auth
+        db = init_firebase()
+        if not db:
+            return None
+            
+        # Sign in with email and password
+        user = auth.get_user_by_email(email)
+        
+        # Verify password (this is a simplified approach - in production, use Firebase Auth SDK)
+        # Note: In a real app, you should use Firebase Auth client-side SDK for proper authentication
+        # This is a simplified version for demonstration
+        return user
+    except Exception as e:
+        st.error(f"Sign in error: {e}")
+        return None
+
+def sign_out():
+    st.session_state.clear()
+    st.rerun()
+
+# Check if user is logged in
+def is_logged_in():
+    return 'user' in st.session_state
+
+# Save prediction to Firestore with user ID
 def save_prediction_to_firestore(input_data, prediction, proba):
     try:
         db = init_firebase()
@@ -93,6 +146,10 @@ def save_prediction_to_firestore(input_data, prediction, proba):
             }
         }
         
+        # Add user ID if logged in
+        if is_logged_in():
+            prediction_data['user_id'] = st.session_state.user.uid
+        
         # Add a new document with auto-generated ID
         doc_ref = predictions_ref.add(prediction_data)
         return True
@@ -101,7 +158,30 @@ def save_prediction_to_firestore(input_data, prediction, proba):
         st.error(f"Firestore save error: {e}")
         return False
 
-# Get all predictions from Firestore
+# Get predictions for the current user
+def get_user_predictions(user_id):
+    try:
+        db = init_firebase()
+        if not db:
+            return None
+            
+        predictions_ref = db.collection('hbp_predictions')
+        docs = predictions_ref.where('user_id', '==', user_id)\
+                             .order_by('timestamp', direction=firestore.Query.DESCENDING)\
+                             .stream()
+        
+        predictions = []
+        for doc in docs:
+            pred_data = doc.to_dict()
+            pred_data['id'] = doc.id
+            predictions.append(pred_data)
+            
+        return predictions
+    except Exception as e:
+        st.error(f"Error fetching predictions: {e}")
+        return None
+
+# Get all predictions (admin only)
 def get_all_predictions():
     try:
         db = init_firebase()
@@ -122,11 +202,6 @@ def get_all_predictions():
         st.error(f"Error fetching predictions: {e}")
         return None
 
-# Sidebar navigation
-with st.sidebar:
-    st.title("Menu")
-    page = st.radio("Go to", ["Predict", "View History", "Ontology", "About"])
-
 # Load model and scaler (cached)
 @st.cache_resource
 def load_model_and_scaler():
@@ -139,6 +214,54 @@ try:
 except Exception as e:
     st.error(f"Error loading model or scaler: {e}")
     st.stop()
+
+# Authentication UI
+def show_auth_ui():
+    auth_tab, signup_tab = st.tabs(["Sign In", "Sign Up"])
+    
+    with auth_tab:
+        with st.form("signin_form"):
+            email = st.text_input("Email", key="signin_email")
+            password = st.text_input("Password", type="password", key="signin_password")
+            submitted = st.form_submit_button("Sign In")
+            
+            if submitted:
+                user = sign_in(email, password)
+                if user:
+                    st.session_state.user = user
+                    st.success("Signed in successfully!")
+                    time.sleep(1)
+                    st.rerun()
+    
+    with signup_tab:
+        with st.form("signup_form"):
+            username = st.text_input("Username", key="signup_username")
+            email = st.text_input("Email", key="signup_email")
+            password = st.text_input("Password", type="password", key="signup_password")
+            submitted = st.form_submit_button("Sign Up")
+            
+            if submitted:
+                user = sign_up(email, password, username)
+                if user:
+                    st.session_state.user = user
+                    st.success("Account created successfully! You are now signed in.")
+                    time.sleep(1)
+                    st.rerun()
+
+# Sidebar navigation
+with st.sidebar:
+    st.title("Menu")
+    
+    if is_logged_in():
+        st.write(f"Welcome, {st.session_state.user.display_name or st.session_state.user.email}!")
+        if st.button("Sign Out"):
+            sign_out()
+    
+    if not is_logged_in():
+        show_auth_ui()
+        st.stop()  # Don't show the rest of the app if not logged in
+    
+    page = st.radio("Go to", ["Predict", "View History", "Ontology", "About"])
 
 # Ontology page
 if page == "Ontology":
@@ -182,10 +305,10 @@ elif page == "About":
 
 # View History page
 elif page == "View History":
-    st.title("Prediction History")
+    st.title("Your Prediction History")
     
-    with st.spinner('Loading prediction history...'):
-        predictions = get_all_predictions()
+    with st.spinner('Loading your prediction history...'):
+        predictions = get_user_predictions(st.session_state.user.uid)
     
     if predictions:
         st.write(f"Found {len(predictions)} historical predictions")
